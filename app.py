@@ -1,7 +1,7 @@
 
 import streamlit as st
 import sqlite3
-
+import pandas as pd
 conn = sqlite3.connect('shade.db', check_same_thread=False)
 cursor = conn.cursor()
 
