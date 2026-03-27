@@ -136,6 +136,16 @@ ORDER BY L.name
 LIMIT 20
 """
 results = cursor.execute(query, params).fetchall()
+location_options = []
+
+for name, capacity, booked in results:
+    if booked < capacity:
+        status = "🟢 Available"
+    else:
+        status = "🔴 Full"
+
+    display = f"{name} ({booked}/{capacity}) {status}"
+    location_options.append((display, name, booked, capacity))
     results = cursor.execute(query, params).fetchall()
 
     # Convert results
