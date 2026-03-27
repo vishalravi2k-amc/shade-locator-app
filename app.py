@@ -46,7 +46,6 @@ if st.button("Add"):
         (name, type_, capacity, region)
     )
     conn.commit()
-    st.success("Location Added")        conn.commit()
         st.success("Location Added")
 
 # Book Shade
