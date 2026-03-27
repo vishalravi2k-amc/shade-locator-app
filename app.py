@@ -38,7 +38,7 @@ def insert_bulk_data():
     conn.commit()
 
 # Create tables
-cursor.execute("DROP TABLE IF EXISTS Locations")
+
 conn.commit()
 cursor.execute('''CREATE TABLE IF NOT EXISTS Locations (
     id INTEGER PRIMARY KEY,
