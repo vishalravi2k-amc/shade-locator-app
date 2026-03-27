@@ -99,19 +99,47 @@ if choice == "Add Location":
         st.success("1000 Locations Added!")
 # Book Shade
 elif choice == "Book Shade":
-    st.subheader("Book Shade")
+    st.subheader("🔍 Smart Shade Booking")
+
     user = st.text_input("User Name")
 
-    locations = [row[0] for row in cursor.execute("SELECT name FROM Locations").fetchall()]
-    selected_location = st.selectbox("Select Location", locations)
+    # 🔍 Search input
+    search = st.text_input("Search Location")
+
+    # 📍 Region filter
+    region_filter = st.selectbox("Filter by Region", ["All", "North", "South", "East", "West"])
+
+    # ⚡ Query database based on filters
+    if region_filter == "All":
+        query = "SELECT name FROM Locations WHERE name LIKE ?"
+        params = (f"%{search}%",)
+    else:
+        query = "SELECT name FROM Locations WHERE name LIKE ? AND region=?"
+        params = (f"%{search}%", region_filter)
+
+    results = cursor.execute(query, params).fetchall()
+
+    # Convert results
+    location_list = [row[0] for row in results]
+
+    if location_list:
+        selected_location = st.selectbox("Select Location", location_list)
+    else:
+        st.warning("No matching locations found")
+        selected_location = None
 
     time = st.text_input("Time")
 
-    if st.button("Book"):
-        cursor.execute("INSERT INTO Bookings (user, location, time) VALUES (?, ?, ?)",
-                       (user, selected_location, time))
+    # Booking button
+    if st.button("Book Smart") and selected_location:
+        cursor.execute(
+            "INSERT INTO Bookings (user, location, time) VALUES (?, ?, ?)",
+            (user, selected_location, time)
+        )
         conn.commit()
-        st.success("Booking Done")
+        st.success("Booking Successful!")
+
+
 
 # View Bookings
 elif choice == "View Bookings":
