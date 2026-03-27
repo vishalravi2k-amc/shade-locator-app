@@ -4,7 +4,7 @@ import sqlite3
 conn = sqlite3.connect('shade.db', check_same_thread=False)
 cursor = conn.cursor()
 
-# Create tables (IMPORTANT for deployment)
+# Create tables
 cursor.execute('''CREATE TABLE IF NOT EXISTS Locations (
     id INTEGER PRIMARY KEY,
     name TEXT,
