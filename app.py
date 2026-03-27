@@ -46,7 +46,7 @@ if st.button("Add"):
         (name, type_, capacity, region)
     )
     conn.commit()
-        st.success("Location Added")
+    st.success("Location Added")
 
 # Book Shade
 elif choice == "Book Shade":
