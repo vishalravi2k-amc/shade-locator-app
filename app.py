@@ -110,14 +110,31 @@ elif choice == "Book Shade":
     region_filter = st.selectbox("Filter by Region", ["All", "North", "South", "East", "West"])
 
     # ⚡ Query database based on filters
-    if region_filter == "All":
-        query = "SELECT name FROM Locations WHERE name LIKE ?"
-        params = (f"%{search}%",)
-    else:
-        query = "SELECT name FROM Locations WHERE name LIKE ? AND region=?"
-        params = (f"%{search}%", region_filter)
-        query += " ORDER BY name LIMIT 20"
+time = st.text_input("Time")
 
+if not time:
+    st.warning("Enter time to check availability")
+    st.stop()
+
+query = """
+SELECT L.name, L.capacity,
+COUNT(CASE WHEN B.time=? THEN 1 END) as booked
+FROM Locations L
+LEFT JOIN Bookings B ON L.name = B.location
+WHERE L.name LIKE ?
+"""
+
+params = [time, f"%{search}%"]
+
+if region_filter != "All":
+    query += " AND L.region=?"
+    params.append(region_filter)
+
+query += """
+GROUP BY L.name
+ORDER BY L.name
+LIMIT 20
+"""
     results = cursor.execute(query, params).fetchall()
 
     # Convert results
