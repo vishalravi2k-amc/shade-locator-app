@@ -146,7 +146,24 @@ for name, capacity, booked in results:
 
     display = f"{name} ({booked}/{capacity}) {status}"
     location_options.append((display, name, booked, capacity))
-    results = cursor.execute(query, params).fetchall()
+    location_options = []
+
+for name, capacity, booked in results:
+    if booked < capacity:
+        status = "🟢 Available"
+    else:
+        status = "🔴 Full"
+
+    display = f"{name} ({booked}/{capacity}) {status}"
+    location_options.append((display, name, booked, capacity))
+    if location_options:
+    selected = st.selectbox(
+        "Select Location",
+        location_options,
+        format_func=lambda x: x[0]
+    )
+
+
 
     # Convert results
     location_list = [row[0] for row in results]
