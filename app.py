@@ -72,7 +72,7 @@ elif choice == "View Bookings":
 
     if data:
         df = pd.DataFrame(data, columns=["ID", "User", "Location", "Time"])
-        st.dataframe(df)
+        st.table(df)
     else:
         st.warning("No bookings found")
 
