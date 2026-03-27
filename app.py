@@ -5,6 +5,38 @@ import pandas as pd
 conn = sqlite3.connect('shade.db', check_same_thread=False)
 cursor = conn.cursor()
 
+def insert_bulk_data():
+    import random
+
+    locations = [
+        "Majestic Bus Stand", "KR Market", "BTM Layout", "Electronic City",
+        "Whitefield", "Yelahanka", "Hebbal", "Marathahalli",
+        "Indiranagar", "Jayanagar", "Banashankari", "Bannerghatta",
+        "Silk Board", "Hosur Road", "MG Road", "Brigade Road",
+        "Rajajinagar", "Malleshwaram", "Kengeri", "Nagawara"
+    ]
+
+    extra_places = [
+        "Bus Stop", "Metro Station", "College", "School",
+        "Park", "Parking", "Hospital", "Mall"
+    ]
+
+    shade_types = ["Tree", "Building", "Bus Stop", "Shelter", "Umbrella"]
+    regions = ["North", "South", "East", "West"]
+
+    for i in range(1000):
+        name = random.choice(locations) + " " + random.choice(extra_places) + f" {i}"
+        type_ = random.choice(shade_types)
+        capacity = random.randint(5, 100)
+        region = random.choice(regions)
+
+        cursor.execute(
+            "INSERT INTO Locations (name, type, capacity, region) VALUES (?, ?, ?, ?)",
+            (name, type_, capacity, region)
+        )
+
+    conn.commit()
+
 # Create tables
 cursor.execute("DROP TABLE IF EXISTS Locations")
 conn.commit()
