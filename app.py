@@ -116,6 +116,7 @@ elif choice == "Book Shade":
     else:
         query = "SELECT name FROM Locations WHERE name LIKE ? AND region=?"
         params = (f"%{search}%", region_filter)
+        query += " LIMIT 20"
 
     results = cursor.execute(query, params).fetchall()
 
