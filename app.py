@@ -10,9 +10,9 @@ cursor.execute('''CREATE TABLE IF NOT EXISTS Locations (
     id INTEGER PRIMARY KEY,
     name TEXT,
     type TEXT,
-    capacity INTEGER
+    capacity INTEGER,
+    region TEXT
 )''')
-
 cursor.execute('''CREATE TABLE IF NOT EXISTS Bookings (
     id INTEGER PRIMARY KEY,
     user TEXT,
