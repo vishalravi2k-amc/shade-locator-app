@@ -6,6 +6,8 @@ conn = sqlite3.connect('shade.db', check_same_thread=False)
 cursor = conn.cursor()
 
 # Create tables
+cursor.execute("DROP TABLE IF EXISTS Locations")
+conn.commit()
 cursor.execute('''CREATE TABLE IF NOT EXISTS Locations (
     id INTEGER PRIMARY KEY,
     name TEXT,
@@ -36,10 +38,15 @@ if choice == "Add Location":
     type_ = st.selectbox("Shade Type", shade_types)
     capacity = st.number_input("Capacity", min_value=1)
 
-    if st.button("Add"):
-        cursor.execute("INSERT INTO Locations (name, type, capacity) VALUES (?, ?, ?)",
-                       (name, type_, capacity))
-        conn.commit()
+region = st.selectbox("Region", ["North", "South", "East", "West"])
+
+if st.button("Add"):
+    cursor.execute(
+        "INSERT INTO Locations (name, type, capacity, region) VALUES (?, ?, ?, ?)",
+        (name, type_, capacity, region)
+    )
+    conn.commit()
+    st.success("Location Added")        conn.commit()
         st.success("Location Added")
 
 # Book Shade
