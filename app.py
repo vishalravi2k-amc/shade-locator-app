@@ -67,6 +67,10 @@ elif choice == "Book Shade":
 # View Bookings
 elif choice == "View Bookings":
     st.subheader("All Bookings")
-    data = cursor.execute("SELECT * FROM Bookings").fetchall()
-    for row in data:
-        st.write(row)
+import pandas as pd
+
+data = cursor.execute("SELECT * FROM Bookings").fetchall()
+
+df = pd.DataFrame(data, columns=["ID", "User", "Location", "Time"])
+
+st.dataframe(df)
