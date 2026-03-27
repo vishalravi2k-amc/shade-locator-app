@@ -66,11 +66,14 @@ elif choice == "Book Shade":
 
 # View Bookings
 elif choice == "View Bookings":
-    st.subheader("All Bookings")
-import pandas as pd
+    st.subheader("📊 All Bookings")
 
-data = cursor.execute("SELECT * FROM Bookings").fetchall()
+    data = cursor.execute("SELECT * FROM Bookings").fetchall()
 
-df = pd.DataFrame(data, columns=["ID", "User", "Location", "Time"])
+    if data:
+        df = pd.DataFrame(data, columns=["ID", "User", "Location", "Time"])
+        st.dataframe(df)
+    else:
+        st.warning("No bookings found")
 
-st.dataframe(df)
+
