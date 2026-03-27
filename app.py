@@ -135,6 +135,7 @@ GROUP BY L.name
 ORDER BY L.name
 LIMIT 20
 """
+results = cursor.execute(query, params).fetchall()
     results = cursor.execute(query, params).fetchall()
 
     # Convert results
