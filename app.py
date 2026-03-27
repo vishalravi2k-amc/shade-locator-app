@@ -1,3 +1,4 @@
+
 import streamlit as st
 import sqlite3
 
@@ -30,7 +31,9 @@ choice = st.sidebar.selectbox("Menu", menu)
 if choice == "Add Location":
     st.subheader("Add Location")
     name = st.text_input("Location Name")
-    type_ = st.text_input("Shade Type")
+    shade_types = ["Tree", "Building", "Bus Stop", "Shelter", "Umbrella"]
+
+    type_ = st.selectbox("Shade Type", shade_types)
     capacity = st.number_input("Capacity", min_value=1)
 
     if st.button("Add"):
