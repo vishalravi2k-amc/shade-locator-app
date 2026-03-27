@@ -4,6 +4,23 @@ import sqlite3
 conn = sqlite3.connect('shade.db', check_same_thread=False)
 cursor = conn.cursor()
 
+# Create tables (IMPORTANT for deployment)
+cursor.execute('''CREATE TABLE IF NOT EXISTS Locations (
+    id INTEGER PRIMARY KEY,
+    name TEXT,
+    type TEXT,
+    capacity INTEGER
+)''')
+
+cursor.execute('''CREATE TABLE IF NOT EXISTS Bookings (
+    id INTEGER PRIMARY KEY,
+    user TEXT,
+    location TEXT,
+    time TEXT
+)''')
+
+conn.commit()
+
 st.title("🌳 Shade Locator System")
 
 menu = ["Add Location", "Book Shade", "View Bookings"]
