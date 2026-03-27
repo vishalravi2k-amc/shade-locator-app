@@ -1,15 +1,35 @@
-
 import streamlit as st
 import sqlite3
 import pandas as pd
+
+# DB connection
 conn = sqlite3.connect('shade.db', check_same_thread=False)
 cursor = conn.cursor()
 
+# Create tables
+cursor.execute('''CREATE TABLE IF NOT EXISTS Locations (
+    id INTEGER PRIMARY KEY,
+    name TEXT,
+    type TEXT,
+    capacity INTEGER,
+    region TEXT
+)''')
+
+cursor.execute('''CREATE TABLE IF NOT EXISTS Bookings (
+    id INTEGER PRIMARY KEY,
+    user TEXT,
+    location TEXT,
+    time TEXT
+)''')
+
+conn.commit()
+
+# Bulk data generator
 def insert_bulk_data():
     import random
 
     locations = [
-        "Majestic Bus Stand", "KR Market", "BTM Layout", "Electronic City",
+        "Majestic", "KR Market", "BTM Layout", "Electronic City",
         "Whitefield", "Yelahanka", "Hebbal", "Marathahalli",
         "Indiranagar", "Jayanagar", "Banashankari", "Bannerghatta",
         "Silk Board", "Hosur Road", "MG Road", "Brigade Road",
@@ -37,41 +57,13 @@ def insert_bulk_data():
 
     conn.commit()
 
-# Create tables
-
-conn.commit()
-cursor.execute('''CREATE TABLE IF NOT EXISTS Locations (
-    id INTEGER PRIMARY KEY,
-    name TEXT,
-    type TEXT,
-    capacity INTEGER,
-    region TEXT
-)''')
-cursor.execute('''CREATE TABLE IF NOT EXISTS Bookings (
-    id INTEGER PRIMARY KEY,
-    user TEXT,
-    location TEXT,
-    time TEXT
-)''')
-
-conn.commit()
-
+# UI
 st.title("🌳 Shade Locator System")
 
 menu = ["Add Location", "Book Shade", "View Bookings"]
 choice = st.sidebar.selectbox("Menu", menu)
 
-# Add Location
-if choice == "Add Location":
-    st.subheader("Add Location")
-    name = st.text_input("Location Name")
-    shade_types = ["Tree", "Building", "Bus Stop", "Shelter", "Umbrella"]
-
-    type_ = st.selectbox("Shade Type", shade_types)
-    capacity = st.number_input("Capacity", min_value=1)
-
-region = st.selectbox("Region", ["North", "South", "East", "West"])
-
+# ---------------- ADD LOCATION ----------------
 if choice == "Add Location":
     st.subheader("Add Location")
 
@@ -84,7 +76,6 @@ if choice == "Add Location":
 
     region = st.selectbox("Region", ["North", "South", "East", "West"])
 
-    # ✅ NORMAL ADD BUTTON
     if st.button("Add"):
         cursor.execute(
             "INSERT INTO Locations (name, type, capacity, region) VALUES (?, ?, ?, ?)",
@@ -93,101 +84,85 @@ if choice == "Add Location":
         conn.commit()
         st.success("Location Added")
 
-    # ✅ BULK GENERATE BUTTON (SEPARATE)
     if st.button("⚡ Generate 1000 Locations"):
         insert_bulk_data()
         st.success("1000 Locations Added!")
-# Book Shade
+
+# ---------------- BOOK SHADE ----------------
 elif choice == "Book Shade":
     st.subheader("🔍 Smart Shade Booking")
 
     user = st.text_input("User Name")
-
-    # 🔍 Search input
     search = st.text_input("Search Location")
 
-    # 📍 Region filter
-    region_filter = st.selectbox("Filter by Region", ["All", "North", "South", "East", "West"])
-
-    # ⚡ Query database based on filters
-time = st.text_input("Time")
-
-if not time:
-    st.warning("Enter time to check availability")
-    st.stop()
-
-query = """
-SELECT L.name, L.capacity,
-COUNT(CASE WHEN B.time=? THEN 1 END) as booked
-FROM Locations L
-LEFT JOIN Bookings B ON L.name = B.location
-WHERE L.name LIKE ?
-"""
-
-params = [time, f"%{search}%"]
-
-if region_filter != "All":
-    query += " AND L.region=?"
-    params.append(region_filter)
-
-query += """
-GROUP BY L.name
-ORDER BY L.name
-LIMIT 20
-"""
-results = cursor.execute(query, params).fetchall()
-location_options = []
-
-for name, capacity, booked in results:
-    if booked < capacity:
-        status = "🟢 Available"
-    else:
-        status = "🔴 Full"
-
-    display = f"{name} ({booked}/{capacity}) {status}"
-    location_options.append((display, name, booked, capacity))
-    location_options = []
-
-for name, capacity, booked in results:
-    if booked < capacity:
-        status = "🟢 Available"
-    else:
-        status = "🔴 Full"
-
-    display = f"{name} ({booked}/{capacity}) {status}"
-    location_options.append((display, name, booked, capacity))
-    if location_options:
-    selected = st.selectbox(
-        "Select Location",
-        location_options,
-        format_func=lambda x: x[0]
+    region_filter = st.selectbox(
+        "Filter by Region",
+        ["All", "North", "South", "East", "West"]
     )
-
-
-
-    # Convert results
-    location_list = [row[0] for row in results]
-
-    if location_list:
-        selected_location = st.selectbox("Select Location", location_list)
-    else:
-        st.warning("No matching locations found")
-        selected_location = None
 
     time = st.text_input("Time")
 
-    # Booking button
-    if st.button("Book Smart") and selected_location:
-        cursor.execute(
-            "INSERT INTO Bookings (user, location, time) VALUES (?, ?, ?)",
-            (user, selected_location, time)
+    if not time:
+        st.warning("Enter time to check availability")
+        st.stop()
+
+    # Query with capacity + time filtering
+    query = """
+    SELECT L.name, L.capacity,
+    COUNT(CASE WHEN B.time=? THEN 1 END) as booked
+    FROM Locations L
+    LEFT JOIN Bookings B ON L.name = B.location
+    WHERE L.name LIKE ?
+    """
+
+    params = [time, f"%{search}%"]
+
+    if region_filter != "All":
+        query += " AND L.region=?"
+        params.append(region_filter)
+
+    query += """
+    GROUP BY L.name
+    ORDER BY L.name
+    LIMIT 20
+    """
+
+    results = cursor.execute(query, params).fetchall()
+
+    # Format results
+    location_options = []
+
+    for name, capacity, booked in results:
+        status = "🟢 Available" if booked < capacity else "🔴 Full"
+        display = f"{name} ({booked}/{capacity}) {status}"
+        location_options.append((display, name, booked, capacity))
+
+    # Dropdown
+    if location_options:
+        selected = st.selectbox(
+            "Select Location",
+            location_options,
+            format_func=lambda x: x[0]
         )
-        conn.commit()
-        st.success("Booking Successful!")
+    else:
+        st.warning("No locations found")
+        selected = None
 
+    # Booking
+    if st.button("Book Smart") and selected:
+        name, booked, capacity = selected[1], selected[2], selected[3]
 
+        if booked >= capacity:
+            st.error("❌ Location is FULL")
+        else:
+            cursor.execute(
+                "INSERT INTO Bookings (user, location, time) VALUES (?, ?, ?)",
+                (user, name, time)
+            )
+            conn.commit()
+            st.success("✅ Booking Successful")
 
-# View Bookings
+# ---------------- VIEW BOOKINGS ----------------
 elif choice == "View Bookings":
     st.subheader("📊 All Bookings")
 
@@ -198,5 +173,3 @@ elif choice == "View Bookings":
         st.table(df)
     else:
         st.warning("No bookings found")
-
-
