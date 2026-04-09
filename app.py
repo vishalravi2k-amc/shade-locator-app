@@ -1,3 +1,5 @@
+import folium
+from streamlit_folium import st_folium
 import streamlit as st
 import sqlite3
 import pandas as pd
