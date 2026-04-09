@@ -3,9 +3,9 @@ import folium
 from streamlit_folium import st_folium
 import sqlite3
 import pandas as pd
-
-# ---------------- DEBUG (IMPORTANT) ----------------
-st.write("✅ App Loaded Successfully")
+from geopy.geocoders import Nominatim
+from geopy.distance import geodesic
+import requests
 
 # ---------------- DATABASE ----------------
 conn = sqlite3.connect('shade.db', check_same_thread=False)
@@ -28,175 +28,136 @@ cursor.execute('''CREATE TABLE IF NOT EXISTS Bookings (
     time TEXT
 )''')
 
-cursor.execute('''CREATE TABLE IF NOT EXISTS Reports (
-    id INTEGER PRIMARY KEY,
-    location TEXT,
-    lat REAL,
-    lon REAL,
-    issue TEXT
-)''')
-
 conn.commit()
 
-# ---------------- UI ----------------
+# ---------------- SETUP ----------------
 st.set_page_config(layout="wide")
 st.title("🌳 Shade Locator System")
 
-menu = ["Add Location", "Book Shade", "Report Issue", "View Bookings"]
+geolocator = Nominatim(user_agent="shade_locator")
+
+menu = ["Add Location", "Book Shade", "Find Nearest Shade"]
 choice = st.sidebar.selectbox("Menu", menu)
+
+# ---------------- FUNCTION: AUTOCOMPLETE ----------------
+def get_suggestions(query):
+    url = f"https://nominatim.openstreetmap.org/search?format=json&q={query}"
+    response = requests.get(url).json()
+    return response[:5]
+
+# ---------------- FUNCTION: DISTANCE ----------------
+def find_nearest(user_loc, locations):
+    min_dist = float('inf')
+    nearest = None
+
+    for loc in locations:
+        dist = geodesic(user_loc, (loc[2], loc[3])).km
+        if dist < min_dist:
+            min_dist = dist
+            nearest = loc
+
+    return nearest, min_dist
 
 # ---------------- ADD LOCATION ----------------
 if choice == "Add Location":
-    st.subheader("Add Location")
+    st.subheader("➕ Add Location")
 
-    col1, col2 = st.columns([1, 2])
+    col1, col2 = st.columns([1,2])
 
-    # LEFT PANEL
     with col1:
-        name = st.text_input("Location Name")
-        type_ = st.selectbox("Shade Type", ["Tree","Building","Bus Stop","Shelter","Umbrella"])
+        query = st.text_input("🔍 Search Location")
+
+        selected_lat, selected_lon = None, None
+
+        if query:
+            suggestions = get_suggestions(query)
+
+            options = [s["display_name"] for s in suggestions]
+            selected = st.selectbox("Suggestions", options)
+
+            selected_data = next(s for s in suggestions if s["display_name"] == selected)
+
+            selected_lat = float(selected_data["lat"])
+            selected_lon = float(selected_data["lon"])
+
+            st.success(f"📍 {selected}")
+
+        type_ = st.selectbox("Shade Type", ["Tree","Building","Bus Stop"])
         capacity = st.number_input("Capacity", min_value=1)
         region = st.selectbox("Region", ["North","South","East","West"])
 
-        st.write("Selected Lat:", st.session_state.get("lat", "Not selected"))
-        st.write("Selected Lon:", st.session_state.get("lon", "Not selected"))
-
-        if st.button("Add Location"):
-            lat = st.session_state.get("lat", None)
-            lon = st.session_state.get("lon", None)
-
-            if lat is None or lon is None:
-                st.error("❌ Please click on map first")
-            else:
-                cursor.execute(
-                    "INSERT INTO Locations (name,type,capacity,region,lat,lon) VALUES (?,?,?,?,?,?)",
-                    (name, type_, capacity, region, lat, lon)
-                )
-                conn.commit()
-                st.success("✅ Location Added")
-
-    # RIGHT PANEL (MAP)
-    with col2:
-        st.markdown("### 📍 Click Map to Select Location")
-        st.write("---")
-
-        try:
-            m = folium.Map(location=[12.97, 77.59], zoom_start=12)
-
-            # ADD CLICK MARKER (visual feedback)
-            if "lat" in st.session_state:
-                folium.Marker(
-                    [st.session_state["lat"], st.session_state["lon"]],
-                    popup="Selected Location",
-                    icon=folium.Icon(color="blue")
-                ).add_to(m)
-
-            map_data = st_folium(
-                m,
-                height=500,
-                use_container_width=True,
-                key="map_add"
+        if st.button("Add Location") and selected_lat:
+            cursor.execute(
+                "INSERT INTO Locations (name,type,capacity,region,lat,lon) VALUES (?,?,?,?,?,?)",
+                (selected, type_, capacity, region, selected_lat, selected_lon)
             )
+            conn.commit()
+            st.success("✅ Location Added")
 
-            if map_data and map_data.get("last_clicked"):
-                st.session_state["lat"] = map_data["last_clicked"]["lat"]
-                st.session_state["lon"] = map_data["last_clicked"]["lng"]
+    with col2:
+        map_center = [selected_lat or 12.97, selected_lon or 77.59]
+        m = folium.Map(location=map_center, zoom_start=13)
 
-                st.success(f"📍 Selected: {st.session_state['lat']}, {st.session_state['lon']}")
+        if selected_lat:
+            folium.Marker([selected_lat, selected_lon], popup="Selected").add_to(m)
 
-        except Exception as e:
-            st.error("❌ Map failed to load")
-            st.write(e)
+        st_folium(m, height=500)
 
 # ---------------- BOOK SHADE ----------------
 elif choice == "Book Shade":
-    st.subheader("🗺️ Book Shade from Map")
+    st.subheader("🗺️ Book Shade")
 
-    user = st.text_input("User Name")
-    search = st.text_input("Search Location")
+    data = cursor.execute("SELECT name, capacity, lat, lon FROM Locations").fetchall()
 
-    date = st.date_input("Date")
-    time_input = st.time_input("Time")
+    m = folium.Map(location=[12.97,77.59], zoom_start=12)
 
-    datetime_str = f"{date.strftime('%Y-%m-%d')} {time_input.strftime('%H:%M:%S')}"
+    for name, cap, lat, lon in data:
+        folium.Marker([lat, lon], popup=name).add_to(m)
 
-    query = """
-    SELECT L.name, L.capacity, L.lat, L.lon,
-    COUNT(CASE WHEN B.time=? THEN 1 END)
-    FROM Locations L
-    LEFT JOIN Bookings B ON L.name=B.location
-    WHERE L.name LIKE ?
-    GROUP BY L.name
-    """
-
-    results = cursor.execute(query, (datetime_str, f"%{search}%")).fetchall()
-
-    m = folium.Map(location=[12.97, 77.59], zoom_start=12)
-
-    for name, capacity, lat, lon, booked in results:
-        color = "green" if booked < capacity else "red"
-
-        folium.Marker(
-            [lat, lon],
-            popup=f"{name}|{booked}|{capacity}",
-            icon=folium.Icon(color=color)
-        ).add_to(m)
-
-    map_data = st_folium(m, height=500, use_container_width=True, key="map_book")
+    map_data = st_folium(m, height=500)
 
     selected = None
     if map_data and map_data.get("last_object_clicked"):
-        popup = map_data["last_object_clicked"]["popup"]
+        selected = map_data["last_object_clicked"]["popup"]
+        st.success(f"Selected: {selected}")
 
-        if popup:
-            parts = popup.split("|")
-            selected = parts[0]
-            booked = int(parts[1])
-            capacity = int(parts[2])
+    user = st.text_input("User Name")
 
-            st.success(f"Selected: {selected}")
-
-            if st.button("Book"):
-                if booked >= capacity:
-                    st.error("Full")
-                else:
-                    cursor.execute(
-                        "INSERT INTO Bookings (user,location,time) VALUES (?,?,?)",
-                        (user, selected, datetime_str)
-                    )
-                    conn.commit()
-                    st.success("Booked")
-
-# ---------------- REPORT ----------------
-elif choice == "Report Issue":
-    st.subheader("Report Shade Issue")
-
-    m = folium.Map(location=[12.97, 77.59], zoom_start=12)
-    map_data = st_folium(m, height=500, use_container_width=True)
-
-    lat, lon = None, None
-    if map_data and map_data.get("last_clicked"):
-        lat = map_data["last_clicked"]["lat"]
-        lon = map_data["last_clicked"]["lng"]
-
-        st.success(f"Selected: {lat}, {lon}")
-
-    issue = st.selectbox("Issue", ["No Shade","Wrong Location","Closed"])
-
-    if st.button("Submit") and lat:
+    if st.button("Book") and selected:
         cursor.execute(
-            "INSERT INTO Reports (location,lat,lon,issue) VALUES (?,?,?,?)",
-            ("User Report", lat, lon, issue)
+            "INSERT INTO Bookings (user,location,time) VALUES (?,?,datetime('now'))",
+            (user, selected)
         )
         conn.commit()
-        st.success("Reported")
+        st.success("✅ Booked")
 
-# ---------------- VIEW BOOKINGS ----------------
-elif choice == "View Bookings":
-    st.subheader("Bookings")
+# ---------------- GPS + NEAREST ----------------
+elif choice == "Find Nearest Shade":
+    st.subheader("📍 Find Nearest Shade")
 
-    data = cursor.execute("SELECT * FROM Bookings").fetchall()
+    st.info("Allow location access in browser")
 
-    if data:
-        df = pd.DataFrame(data, columns=["ID","User","Location","Time"])
-        st.dataframe(df)
+    # JS-based GPS
+    gps = st.experimental_get_query_params()
+
+    lat = st.number_input("Your Latitude", value=12.97)
+    lon = st.number_input("Your Longitude", value=77.59)
+
+    user_loc = (lat, lon)
+
+    data = cursor.execute("SELECT name, capacity, lat, lon FROM Locations").fetchall()
+
+    if st.button("Find Nearest"):
+        nearest, dist = find_nearest(user_loc, data)
+
+        if nearest:
+            st.success(f"Nearest: {nearest[0]} ({dist:.2f} km)")
+
+            m = folium.Map(location=[lat, lon], zoom_start=13)
+
+            folium.Marker([lat, lon], popup="You", icon=folium.Icon(color="blue")).add_to(m)
+            folium.Marker([nearest[2], nearest[3]], popup=nearest[0], icon=folium.Icon(color="green")).add_to(m)
+
+            st_folium(m, height=500)
+        else:
+            st.warning("No locations available")
