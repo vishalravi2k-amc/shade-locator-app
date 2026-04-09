@@ -8,7 +8,7 @@ import pandas as pd
 conn = sqlite3.connect('shade.db', check_same_thread=False)
 cursor = conn.cursor()
 
-# ⚠️ RUN ONLY ONCE THEN REMOVE
+# ⚠️ Run once then comment this
 # cursor.execute("DROP TABLE IF EXISTS Locations")
 # conn.commit()
 
@@ -79,12 +79,8 @@ if choice == "Add Location":
     st.subheader("Add Location")
 
     name = st.text_input("Location Name")
-
-    shade_types = ["Tree", "Building", "Bus Stop", "Shelter", "Umbrella"]
-    type_ = st.selectbox("Shade Type", shade_types)
-
+    type_ = st.selectbox("Shade Type", ["Tree", "Building", "Bus Stop", "Shelter", "Umbrella"])
     capacity = st.number_input("Capacity", min_value=1)
-
     region = st.selectbox("Region", ["North", "South", "East", "West"])
 
     if st.button("Add"):
@@ -117,12 +113,7 @@ elif choice == "Book Shade":
     date = st.date_input("Select Date")
     time = st.time_input("Select Time")
 
-    date = str(date)
-    time = str(time)
-
-    if not time:
-        st.warning("Enter time")
-        st.stop()
+    datetime_str = f"{date} {time}"
 
     # Query
     query = """
@@ -133,7 +124,7 @@ elif choice == "Book Shade":
     WHERE L.name LIKE ?
     """
 
-    params = [f"{date} {time}", f"%{search}%"]
+    params = [datetime_str, f"%{search}%"]
 
     if region_filter != "All":
         query += " AND L.region=?"
@@ -180,7 +171,7 @@ elif choice == "Book Shade":
         else:
             cursor.execute(
                 "INSERT INTO Bookings (user, location, time) VALUES (?, ?, ?)",
-                (user, name, f"{date} {time}")
+                (user, name, datetime_str)
             )
             conn.commit()
             st.success("✅ Booking Successful")
