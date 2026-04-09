@@ -1,11 +1,13 @@
 import streamlit as st
 import folium
 from streamlit_folium import st_folium
+from folium.plugins import HeatMap
 import sqlite3
 import pandas as pd
 from geopy.distance import geodesic
 import requests
 import streamlit.components.v1 as components
+import time
 
 # ---------------- DATABASE ----------------
 conn = sqlite3.connect('shade.db', check_same_thread=False)
@@ -25,13 +27,12 @@ cursor.execute('''CREATE TABLE IF NOT EXISTS locations (
 
 conn.commit()
 
-# Default user (only once)
 cursor.execute("INSERT OR IGNORE INTO users VALUES ('admin','123')")
 conn.commit()
 
 # ---------------- CONFIG ----------------
 st.set_page_config(layout="wide")
-st.markdown("<h1 style='text-align:center;'>🌳 Shade Locator FINAL</h1>", unsafe_allow_html=True)
+st.markdown("<h1 style='text-align:center;'>🌳 Shade Locator ULTRA</h1>", unsafe_allow_html=True)
 
 # ---------------- LOGIN ----------------
 if "user" not in st.session_state:
@@ -39,7 +40,6 @@ if "user" not in st.session_state:
 
 if not st.session_state.user:
     st.subheader("🔐 Login")
-
     u = st.text_input("Username")
     p = st.text_input("Password", type="password")
 
@@ -51,14 +51,14 @@ if not st.session_state.user:
 
         if result:
             st.session_state.user = u
-            st.success("Login success")
+            st.success("Login successful")
             st.rerun()
         else:
-            st.error("Invalid login")
+            st.error("Invalid credentials")
 
     st.stop()
 
-# ---------------- GPS ----------------
+# ---------------- GPS AUTO DETECT ----------------
 def get_gps():
     html = """
     <script>
@@ -84,7 +84,7 @@ user_lon = float(params.get("lon", 77.59))
 menu = st.sidebar.selectbox("Menu", ["Dashboard","Add Location","Explore","Analytics","Logout"])
 
 # ---------------- SEARCH ----------------
-def search(query):
+def search_location(query):
     url = f"https://nominatim.openstreetmap.org/search?format=json&q={query}"
     return requests.get(url).json()[:5]
 
@@ -92,21 +92,20 @@ def search(query):
 if menu == "Dashboard":
     st.subheader("📊 Dashboard")
 
-    total_locations = cursor.execute("SELECT COUNT(*) FROM locations").fetchone()[0]
-
-    st.metric("Total Locations", total_locations)
+    total = cursor.execute("SELECT COUNT(*) FROM locations").fetchone()[0]
+    st.metric("Total Shade Locations", total)
 
 # ---------------- ADD LOCATION ----------------
 elif menu == "Add Location":
     st.subheader("➕ Add Location")
 
-    query = st.text_input("🔍 Search location")
+    query = st.text_input("🔍 Search Location")
 
     lat, lon = None, None
     name = ""
 
     if query:
-        results = search(query)
+        results = search_location(query)
 
         if results:
             options = [r["display_name"] for r in results]
@@ -120,7 +119,7 @@ elif menu == "Add Location":
 
             st.success(name)
 
-    if st.button("Add") and lat:
+    if st.button("Add Location") and lat:
         cursor.execute(
             "INSERT INTO locations (name,lat,lon) VALUES (?,?,?)",
             (name, lat, lon)
@@ -131,27 +130,42 @@ elif menu == "Add Location":
     m = folium.Map(location=[lat or 12.97, lon or 77.59], zoom_start=13)
 
     if lat:
-        folium.Marker([lat, lon]).add_to(m)
+        folium.Marker([lat, lon], popup="Selected").add_to(m)
 
     st_folium(m, height=500)
 
 # ---------------- EXPLORE ----------------
 elif menu == "Explore":
-    st.subheader("🗺️ Explore")
+    st.subheader("🗺️ Smart Map")
 
-    st.button("📍 Detect My Location", on_click=get_gps)
-    st.info(f"Your location: {user_lat}, {user_lon}")
+    col1, col2 = st.columns([1,2])
+
+    with col1:
+        st.button("📍 Detect My Location", on_click=get_gps)
+        st.write(f"📍 {user_lat}, {user_lon}")
+
+        auto_refresh = st.checkbox("🔄 Live Tracking (auto refresh)")
 
     data = cursor.execute("SELECT name, lat, lon FROM locations").fetchall()
 
     m = folium.Map(location=[user_lat, user_lon], zoom_start=13)
 
-    folium.Marker([user_lat, user_lon], popup="You", icon=folium.Icon(color="blue")).add_to(m)
+    # USER MARKER
+    folium.Marker(
+        [user_lat, user_lon],
+        popup="You",
+        icon=folium.Icon(color="blue")
+    ).add_to(m)
+
+    # HEATMAP DATA
+    heat_data = []
 
     nearest = None
     min_dist = 9999
 
     for name, lat, lon in data:
+        heat_data.append([lat, lon])
+
         dist = geodesic((user_lat, user_lon), (lat, lon)).km
 
         if dist < min_dist:
@@ -160,8 +174,13 @@ elif menu == "Explore":
 
         folium.Marker([lat, lon], popup=name).add_to(m)
 
+    # HEATMAP
+    if heat_data:
+        HeatMap(heat_data).add_to(m)
+
+    # NEAREST + ROUTE
     if nearest:
-        st.success(f"Nearest: {nearest[0]} ({min_dist:.2f} km)")
+        st.success(f"🧭 Nearest: {nearest[0]} ({min_dist:.2f} km)")
 
         folium.Marker(
             [nearest[1], nearest[2]],
@@ -171,14 +190,26 @@ elif menu == "Explore":
 
         folium.PolyLine(
             [(user_lat, user_lon), (nearest[1], nearest[2])],
-            color="blue"
+            color="blue",
+            weight=4
         ).add_to(m)
 
-    st_folium(m, height=600)
+        # GOOGLE NAVIGATION
+        nav_url = f"https://www.google.com/maps/dir/?api=1&origin={user_lat},{user_lon}&destination={nearest[1]},{nearest[2]}"
+
+        st.markdown(f"[🚗 Navigate using Google Maps]({nav_url})")
+
+    with col2:
+        st_folium(m, height=600)
+
+    # LIVE TRACKING
+    if auto_refresh:
+        time.sleep(5)
+        st.rerun()
 
 # ---------------- ANALYTICS ----------------
 elif menu == "Analytics":
-    st.subheader("📈 Analytics")
+    st.subheader("📊 Analytics")
 
     df = pd.read_sql_query("SELECT * FROM locations", conn)
 
