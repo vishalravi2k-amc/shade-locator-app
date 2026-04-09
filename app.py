@@ -14,7 +14,9 @@ cursor.execute('''CREATE TABLE IF NOT EXISTS Locations (
     name TEXT,
     type TEXT,
     capacity INTEGER,
-    region TEXT
+    region TEXT,
+    lat REAL,
+    lon REAL
 )''')
 
 cursor.execute('''CREATE TABLE IF NOT EXISTS Bookings (
