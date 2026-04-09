@@ -8,9 +8,10 @@ import pandas as pd
 conn = sqlite3.connect('shade.db', check_same_thread=False)
 cursor = conn.cursor()
 
+# ⚠️ RUN ONLY ONCE THEN REMOVE
+# cursor.execute("DROP TABLE IF EXISTS Locations")
+# conn.commit()
 
-cursor.execute("DROP TABLE IF EXISTS Locations")
-conn.commit()
 # Create tables
 cursor.execute('''CREATE TABLE IF NOT EXISTS Locations (
     id INTEGER PRIMARY KEY,
@@ -31,7 +32,7 @@ cursor.execute('''CREATE TABLE IF NOT EXISTS Bookings (
 
 conn.commit()
 
-# Bulk data generator
+# ---------------- BULK DATA ----------------
 def insert_bulk_data():
     import random
 
@@ -58,16 +59,16 @@ def insert_bulk_data():
         region = random.choice(regions)
 
         lat = random.uniform(12.85, 13.10)
-lon = random.uniform(77.50, 77.70)
+        lon = random.uniform(77.50, 77.70)
 
-cursor.execute(
-    "INSERT INTO Locations (name, type, capacity, region, lat, lon) VALUES (?, ?, ?, ?, ?, ?)",
-    (name, type_, capacity, region, lat, lon)
-)
+        cursor.execute(
+            "INSERT INTO Locations (name, type, capacity, region, lat, lon) VALUES (?, ?, ?, ?, ?, ?)",
+            (name, type_, capacity, region, lat, lon)
+        )
 
     conn.commit()
 
-# UI
+# ---------------- UI ----------------
 st.title("🌳 Shade Locator System")
 
 menu = ["Add Location", "Book Shade", "View Bookings"]
@@ -87,9 +88,12 @@ if choice == "Add Location":
     region = st.selectbox("Region", ["North", "South", "East", "West"])
 
     if st.button("Add"):
+        lat = 12.97
+        lon = 77.59
+
         cursor.execute(
-            "INSERT INTO Locations (name, type, capacity, region) VALUES (?, ?, ?, ?)",
-            (name, type_, capacity, region)
+            "INSERT INTO Locations (name, type, capacity, region, lat, lon) VALUES (?, ?, ?, ?, ?, ?)",
+            (name, type_, capacity, region, lat, lon)
         )
         conn.commit()
         st.success("Location Added")
@@ -109,15 +113,18 @@ elif choice == "Book Shade":
         "Filter by Region",
         ["All", "North", "South", "East", "West"]
     )
+
     date = st.date_input("Select Date")
     time = st.time_input("Select Time")
+
+    date = str(date)
     time = str(time)
 
     if not time:
-        st.warning("Enter time to check availability")
+        st.warning("Enter time")
         st.stop()
 
-    # Query with capacity + time filtering
+    # Query
     query = """
     SELECT L.name, L.capacity, L.lat, L.lon,
     COUNT(CASE WHEN B.time=? THEN 1 END) as booked
@@ -126,7 +133,7 @@ elif choice == "Book Shade":
     WHERE L.name LIKE ?
     """
 
-    params = [time, f"%{search}%"]
+    params = [f"{date} {time}", f"%{search}%"]
 
     if region_filter != "All":
         query += " AND L.region=?"
@@ -139,14 +146,16 @@ elif choice == "Book Shade":
     """
 
     results = cursor.execute(query, params).fetchall()
-if results:
-    best = min(results, key=lambda x: x[4]/x[1] if x[1] else 1)
-    st.success(f"⭐ Recommended: {best[0]} (Least crowded)")
-    
+
+    # ⭐ Recommendation
+    if results:
+        best = min(results, key=lambda x: x[4]/x[1] if x[1] else 1)
+        st.success(f"⭐ Recommended: {best[0]} (Least crowded)")
+
     # Format results
     location_options = []
 
-    for name, capacity, lat, lon, booked in results::
+    for name, capacity, lat, lon, booked in results:
         status = "🟢 Available" if booked < capacity else "🔴 Full"
         display = f"{name} ({booked}/{capacity}) {status}"
         location_options.append((display, name, booked, capacity))
@@ -166,33 +175,31 @@ if results:
     if st.button("Book Smart") and selected:
         name, booked, capacity = selected[1], selected[2], selected[3]
 
-     import folium
-from streamlit_folium import st_folium
-
-st.subheader("🗺️ Live Shade Map")
-
-m = folium.Map(location=[12.97, 77.59], zoom_start=11)
-
-for name, capacity, lat, lon, booked in results:
-    color = "green" if booked < capacity else "red"
-
-    folium.Marker(
-        [lat, lon],
-        popup=f"{name}\n{booked}/{capacity}",
-        icon=folium.Icon(color=color)
-    ).add_to(m)
-
-st_folium(m, width=700)      
-
         if booked >= capacity:
             st.error("❌ Location is FULL")
         else:
             cursor.execute(
-    "INSERT INTO Bookings (user, location, time) VALUES (?, ?, ?)",
-    (user, name, f"{date} {time}")
-)
+                "INSERT INTO Bookings (user, location, time) VALUES (?, ?, ?)",
+                (user, name, f"{date} {time}")
+            )
             conn.commit()
             st.success("✅ Booking Successful")
+
+    # 🗺️ MAP
+    st.subheader("🗺️ Live Shade Map")
+
+    m = folium.Map(location=[12.97, 77.59], zoom_start=11)
+
+    for name, capacity, lat, lon, booked in results:
+        color = "green" if booked < capacity else "red"
+
+        folium.Marker(
+            [lat, lon],
+            popup=f"{name}\n{booked}/{capacity}",
+            icon=folium.Icon(color=color)
+        ).add_to(m)
+
+    st_folium(m, width=700)
 
 # ---------------- VIEW BOOKINGS ----------------
 elif choice == "View Bookings":
