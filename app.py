@@ -3,12 +3,28 @@ from streamlit_folium import st_folium
 import streamlit as st
 import sqlite3
 import pandas as pd
+import streamlit.components.v1 as components
 
-# DB connection
+# ---------------- GET USER LOCATION (GPS) ----------------
+def get_user_location():
+    gps_html = """
+    <script>
+    navigator.geolocation.getCurrentPosition(
+        (position) => {
+            const lat = position.coords.latitude;
+            const lon = position.coords.longitude;
+            const data = {lat: lat, lon: lon};
+            window.parent.postMessage({type: "streamlit:setComponentValue", value: data}, "*");
+        }
+    );
+    </script>
+    """
+    return components.html(gps_html, height=0)
+
+# ---------------- DB ----------------
 conn = sqlite3.connect('shade.db', check_same_thread=False)
 cursor = conn.cursor()
 
-# Tables
 cursor.execute('''CREATE TABLE IF NOT EXISTS Locations (
     id INTEGER PRIMARY KEY,
     name TEXT,
@@ -36,6 +52,7 @@ cursor.execute('''CREATE TABLE IF NOT EXISTS Reports (
 
 conn.commit()
 
+# ---------------- UI ----------------
 st.title("🌳 Shade Locator System")
 
 menu = ["Add Location", "Book Shade", "Report Issue", "View Bookings"]
@@ -82,6 +99,18 @@ elif choice == "Book Shade":
 
     datetime_str = f"{date.strftime('%Y-%m-%d')} {time_input.strftime('%H:%M:%S')}"
 
+    # GET GPS
+    st.write("📍 Detecting your location...")
+    gps_data = get_user_location()
+
+    user_lat, user_lon = 12.97, 77.59  # default
+
+    if gps_data and isinstance(gps_data, dict):
+        user_lat = gps_data.get("lat", 12.97)
+        user_lon = gps_data.get("lon", 77.59)
+        st.success(f"Your Location: {user_lat}, {user_lon}")
+
+    # QUERY
     query = """
     SELECT L.name, L.capacity, L.lat, L.lon,
     COUNT(CASE WHEN B.time=? THEN 1 END)
@@ -100,10 +129,17 @@ elif choice == "Book Shade":
 
     results = cursor.execute(query, params).fetchall()
 
-    st.write("👉 Click a marker to select")
+    # MAP CENTERED ON USER
+    m = folium.Map(location=[user_lat, user_lon], zoom_start=13)
 
-    m = folium.Map(location=[12.97,77.59], zoom_start=11)
+    # USER LOCATION MARKER (BLUE)
+    folium.Marker(
+        [user_lat, user_lon],
+        popup="You are here",
+        icon=folium.Icon(color="blue")
+    ).add_to(m)
 
+    # SHADE MARKERS
     for name,capacity,lat,lon,booked in results:
         color = "green" if booked < capacity else "red"
         folium.Marker(
@@ -121,7 +157,7 @@ elif choice == "Book Shade":
     if map_data and map_data.get("last_object_clicked"):
         popup = map_data["last_object_clicked"]["popup"]
 
-        if popup:
+        if popup and "|" in popup:
             parts = popup.split("|")
             selected_name = parts[0]
             selected_booked = int(parts[1])
