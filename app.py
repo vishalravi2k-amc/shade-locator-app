@@ -113,7 +113,7 @@ elif choice == "Book Shade":
     date = st.date_input("Select Date")
     time = st.time_input("Select Time")
 
-    datetime_str = f"{date} {time}"
+    datetime_str = f"{date.strftime('%Y-%m-%d')} {time.strftime('%H:%M:%S')}"
 
     # Query
     query = """
