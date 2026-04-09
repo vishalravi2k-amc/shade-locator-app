@@ -57,7 +57,7 @@ if choice == "Add Location":
         if st.button("Add Location"):
             cursor.execute(
                 "INSERT INTO Locations (name,type,capacity,region,lat,lon) VALUES (?,?,?,?,?,?)",
-                (name,type_,capacity,region,
+                (name, type_, capacity, region,
                  st.session_state.get("lat", 12.97),
                  st.session_state.get("lon", 77.59))
             )
@@ -65,7 +65,11 @@ if choice == "Add Location":
             st.success("✅ Location Added")
 
     with col2:
-        st.markdown("### 📍 Click on Map")
+        st.markdown("### 📍 Click on Map (scroll if not visible)")
+        st.write("---")
+
+        # FORCE RENDER SPACE
+        st.empty()
 
         m = folium.Map(location=[12.97, 77.59], zoom_start=12)
 
@@ -73,7 +77,7 @@ if choice == "Add Location":
             m,
             height=500,
             use_container_width=True,
-            key="add_map"
+            key="add_map_final"
         )
 
         if map_data and map_data.get("last_clicked"):
@@ -118,6 +122,7 @@ elif choice == "Book Shade":
     results = cursor.execute(query, params).fetchall()
 
     st.markdown("### 👉 Click marker to select")
+    st.write("---")
 
     m = folium.Map(location=[12.97,77.59], zoom_start=12)
 
@@ -133,7 +138,7 @@ elif choice == "Book Shade":
         m,
         height=500,
         use_container_width=True,
-        key="book_map"
+        key="book_map_final"
     )
 
     selected_name = None
@@ -157,7 +162,7 @@ elif choice == "Book Shade":
         else:
             cursor.execute(
                 "INSERT INTO Bookings (user,location,time) VALUES (?,?,?)",
-                (user,selected_name,datetime_str)
+                (user, selected_name, datetime_str)
             )
             conn.commit()
             st.success("✅ Booking Successful")
@@ -166,13 +171,16 @@ elif choice == "Book Shade":
 elif choice == "Report Issue":
     st.subheader("⚠️ Report Shade Issue")
 
+    st.markdown("### 📍 Click map to report")
+    st.write("---")
+
     m = folium.Map(location=[12.97,77.59], zoom_start=12)
 
     map_data = st_folium(
         m,
         height=500,
         use_container_width=True,
-        key="report_map"
+        key="report_map_final"
     )
 
     lat, lon = None, None
@@ -187,7 +195,7 @@ elif choice == "Report Issue":
     if st.button("Submit Report") and lat:
         cursor.execute(
             "INSERT INTO Reports (location,lat,lon,issue) VALUES (?,?,?,?)",
-            ("User Report",lat,lon,issue)
+            ("User Report", lat, lon, issue)
         )
         conn.commit()
         st.success("✅ Report Submitted")
