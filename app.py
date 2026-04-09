@@ -3,25 +3,8 @@ from streamlit_folium import st_folium
 import streamlit as st
 import sqlite3
 import pandas as pd
-import streamlit.components.v1 as components
 
-# ---------------- GET USER LOCATION (GPS) ----------------
-def get_user_location():
-    gps_html = """
-    <script>
-    navigator.geolocation.getCurrentPosition(
-        (position) => {
-            const lat = position.coords.latitude;
-            const lon = position.coords.longitude;
-            const data = {lat: lat, lon: lon};
-            window.parent.postMessage({type: "streamlit:setComponentValue", value: data}, "*");
-        }
-    );
-    </script>
-    """
-    return components.html(gps_html, height=0)
-
-# ---------------- DB ----------------
+# ---------------- DATABASE ----------------
 conn = sqlite3.connect('shade.db', check_same_thread=False)
 cursor = conn.cursor()
 
@@ -53,6 +36,7 @@ cursor.execute('''CREATE TABLE IF NOT EXISTS Reports (
 conn.commit()
 
 # ---------------- UI ----------------
+st.set_page_config(layout="wide")
 st.title("🌳 Shade Locator System")
 
 menu = ["Add Location", "Book Shade", "Report Issue", "View Bookings"]
@@ -67,30 +51,38 @@ if choice == "Add Location":
     capacity = st.number_input("Capacity", min_value=1)
     region = st.selectbox("Region", ["North","South","East","West"])
 
-    st.write("📍 Click map to select location")
-    m = folium.Map(location=[12.97,77.59], zoom_start=11)
-    map_data = st_folium(m, height=400)
+    st.markdown("### 📍 Click on map to select location")
+
+    m = folium.Map(location=[12.97, 77.59], zoom_start=12)
+
+    map_data = st_folium(
+        m,
+        height=500,
+        width=700,
+        key="add_map"
+    )
 
     lat, lon = 12.97, 77.59
+
     if map_data and map_data.get("last_clicked"):
         lat = map_data["last_clicked"]["lat"]
         lon = map_data["last_clicked"]["lng"]
-        st.success(f"Selected: {lat}, {lon}")
+        st.success(f"📍 Selected: {lat}, {lon}")
 
-    if st.button("Add"):
+    if st.button("Add Location"):
         cursor.execute(
             "INSERT INTO Locations (name,type,capacity,region,lat,lon) VALUES (?,?,?,?,?,?)",
             (name,type_,capacity,region,lat,lon)
         )
         conn.commit()
-        st.success("Location Added")
+        st.success("✅ Location Added")
 
 # ---------------- BOOK SHADE ----------------
 elif choice == "Book Shade":
     st.subheader("🗺️ Select Shade from Map")
 
     user = st.text_input("User Name")
-    search = st.text_input("Search")
+    search = st.text_input("Search Location")
 
     region_filter = st.selectbox("Region", ["All","North","South","East","West"])
 
@@ -99,18 +91,6 @@ elif choice == "Book Shade":
 
     datetime_str = f"{date.strftime('%Y-%m-%d')} {time_input.strftime('%H:%M:%S')}"
 
-    # GET GPS
-    st.write("📍 Detecting your location...")
-    gps_data = get_user_location()
-
-    user_lat, user_lon = 12.97, 77.59  # default
-
-    if gps_data and isinstance(gps_data, dict):
-        user_lat = gps_data.get("lat", 12.97)
-        user_lon = gps_data.get("lon", 77.59)
-        st.success(f"Your Location: {user_lat}, {user_lon}")
-
-    # QUERY
     query = """
     SELECT L.name, L.capacity, L.lat, L.lon,
     COUNT(CASE WHEN B.time=? THEN 1 END)
@@ -129,26 +109,24 @@ elif choice == "Book Shade":
 
     results = cursor.execute(query, params).fetchall()
 
-    # MAP CENTERED ON USER
-    m = folium.Map(location=[user_lat, user_lon], zoom_start=13)
+    st.markdown("### 👉 Click a marker to select location")
 
-    # USER LOCATION MARKER (BLUE)
-    folium.Marker(
-        [user_lat, user_lon],
-        popup="You are here",
-        icon=folium.Icon(color="blue")
-    ).add_to(m)
+    m = folium.Map(location=[12.97,77.59], zoom_start=12)
 
-    # SHADE MARKERS
-    for name,capacity,lat,lon,booked in results:
+    for name, capacity, lat, lon, booked in results:
         color = "green" if booked < capacity else "red"
         folium.Marker(
-            [lat,lon],
+            [lat, lon],
             popup=f"{name}|{booked}|{capacity}",
             icon=folium.Icon(color=color)
         ).add_to(m)
 
-    map_data = st_folium(m, height=500)
+    map_data = st_folium(
+        m,
+        height=500,
+        width=900,
+        key="book_map"
+    )
 
     selected_name = None
     selected_booked = 0
@@ -167,29 +145,36 @@ elif choice == "Book Shade":
 
     if st.button("Book Selected Location") and selected_name:
         if selected_booked >= selected_capacity:
-            st.error("❌ Full")
+            st.error("❌ Location Full")
         else:
             cursor.execute(
                 "INSERT INTO Bookings (user,location,time) VALUES (?,?,?)",
                 (user,selected_name,datetime_str)
             )
             conn.commit()
-            st.success("✅ Booked")
+            st.success("✅ Booking Successful")
 
 # ---------------- REPORT ISSUE ----------------
 elif choice == "Report Issue":
     st.subheader("⚠️ Report Shade Issue")
 
-    st.write("Click map to report")
+    st.markdown("### 📍 Click map to report issue")
 
-    m = folium.Map(location=[12.97,77.59], zoom_start=11)
-    map_data = st_folium(m, height=400)
+    m = folium.Map(location=[12.97,77.59], zoom_start=12)
+
+    map_data = st_folium(
+        m,
+        height=500,
+        width=700,
+        key="report_map"
+    )
 
     lat, lon = None, None
+
     if map_data and map_data.get("last_clicked"):
         lat = map_data["last_clicked"]["lat"]
         lon = map_data["last_clicked"]["lng"]
-        st.success(f"Selected: {lat}, {lon}")
+        st.success(f"📍 Selected: {lat}, {lon}")
 
     issue = st.selectbox("Issue", ["No Shade","Wrong Location","Closed"])
 
@@ -199,16 +184,16 @@ elif choice == "Report Issue":
             ("User Report",lat,lon,issue)
         )
         conn.commit()
-        st.success("Reported")
+        st.success("✅ Report Submitted")
 
 # ---------------- VIEW BOOKINGS ----------------
 elif choice == "View Bookings":
-    st.subheader("Bookings")
+    st.subheader("📊 All Bookings")
 
     data = cursor.execute("SELECT * FROM Bookings").fetchall()
 
     if data:
         df = pd.DataFrame(data, columns=["ID","User","Location","Time"])
-        st.table(df)
+        st.dataframe(df)
     else:
-        st.warning("No bookings")
+        st.warning("No bookings found")
