@@ -8,10 +8,6 @@ import pandas as pd
 conn = sqlite3.connect('shade.db', check_same_thread=False)
 cursor = conn.cursor()
 
-# ⚠️ Run once then comment this
-# cursor.execute("DROP TABLE IF EXISTS Locations")
-# conn.commit()
-
 # Create tables
 cursor.execute('''CREATE TABLE IF NOT EXISTS Locations (
     id INTEGER PRIMARY KEY,
@@ -113,8 +109,8 @@ elif choice == "Book Shade":
     date = st.date_input("Select Date")
     time = st.time_input("Select Time")
 
-# ✅ Convert to string (IMPORTANT FIX)
-datetime_str = f"{date.strftime('%Y-%m-%d')} {time.strftime('%H:%M:%S')}"
+    # ✅ FIX: Convert datetime to string
+    datetime_str = f"{date.strftime('%Y-%m-%d')} {time.strftime('%H:%M:%S')}"
 
     # Query
     query = """
