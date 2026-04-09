@@ -111,6 +111,7 @@ elif choice == "Book Shade":
     )
     date = st.date_input("Select Date")
     time = st.time_input("Select Time")
+    time = str(time)
 
     if not time:
         st.warning("Enter time to check availability")
