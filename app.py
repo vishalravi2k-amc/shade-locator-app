@@ -100,7 +100,7 @@ elif choice == "Book Shade":
         ["All", "North", "South", "East", "West"]
     )
 
-    time = st.text_input("Time")
+    time = st.time_input("Select Time")
 
     if not time:
         st.warning("Enter time to check availability")
