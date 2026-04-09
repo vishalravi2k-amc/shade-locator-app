@@ -58,7 +58,7 @@ if not st.session_state.user:
 
     st.stop()
 
-# ---------------- GPS AUTO DETECT ----------------
+# ---------------- GPS ----------------
 def get_gps():
     html = """
     <script>
@@ -83,7 +83,7 @@ user_lon = float(params.get("lon", 77.59))
 # ---------------- SIDEBAR ----------------
 menu = st.sidebar.selectbox("Menu", ["Dashboard","Add Location","Explore","Analytics","Logout"])
 
-# ---------------- SEARCH ----------------
+# ---------------- SEARCH FUNCTION ----------------
 def search_location(query):
     url = f"https://nominatim.openstreetmap.org/search?format=json&q={query}"
     return requests.get(url).json()[:5]
@@ -91,9 +91,8 @@ def search_location(query):
 # ---------------- DASHBOARD ----------------
 if menu == "Dashboard":
     st.subheader("📊 Dashboard")
-
     total = cursor.execute("SELECT COUNT(*) FROM locations").fetchone()[0]
-    st.metric("Total Shade Locations", total)
+    st.metric("Total Locations", total)
 
 # ---------------- ADD LOCATION ----------------
 elif menu == "Add Location":
@@ -103,6 +102,7 @@ elif menu == "Add Location":
 
     lat, lon = None, None
     name = ""
+    results = []
 
     if query:
         results = search_location(query)
@@ -125,7 +125,7 @@ elif menu == "Add Location":
             (name, lat, lon)
         )
         conn.commit()
-        st.success("Added")
+        st.success("Location Added")
 
     m = folium.Map(location=[lat or 12.97, lon or 77.59], zoom_start=13)
 
@@ -143,8 +143,7 @@ elif menu == "Explore":
     with col1:
         st.button("📍 Detect My Location", on_click=get_gps)
         st.write(f"📍 {user_lat}, {user_lon}")
-
-        auto_refresh = st.checkbox("🔄 Live Tracking (auto refresh)")
+        auto_refresh = st.checkbox("🔄 Live Tracking")
 
     data = cursor.execute("SELECT name, lat, lon FROM locations").fetchall()
 
@@ -157,9 +156,7 @@ elif menu == "Explore":
         icon=folium.Icon(color="blue")
     ).add_to(m)
 
-    # HEATMAP DATA
     heat_data = []
-
     nearest = None
     min_dist = 9999
 
@@ -194,9 +191,8 @@ elif menu == "Explore":
             weight=4
         ).add_to(m)
 
-        # GOOGLE NAVIGATION
+        # GOOGLE MAPS NAVIGATION
         nav_url = f"https://www.google.com/maps/dir/?api=1&origin={user_lat},{user_lon}&destination={nearest[1]},{nearest[2]}"
-
         st.markdown(f"[🚗 Navigate using Google Maps]({nav_url})")
 
     with col2:
