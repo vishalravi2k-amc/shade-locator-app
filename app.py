@@ -114,12 +114,12 @@ elif choice == "Book Shade":
 
     # Query
     query = """
-    SELECT L.name, L.capacity, L.lat, L.lon,
-    COUNT(CASE WHEN B.time=? THEN 1 END) as booked
-    FROM Locations L
-    LEFT JOIN Bookings B ON L.name = B.location
-    WHERE L.name LIKE ?
-    """
+SELECT L.name, L.capacity, L.lat, L.lon,
+COUNT(CASE WHEN CAST(B.time AS TEXT)=? THEN 1 END) as booked
+FROM Locations L
+LEFT JOIN Bookings B ON L.name = B.location
+WHERE L.name LIKE ?
+"""
 
     params = [datetime_str, f"%{search}%"]
 
