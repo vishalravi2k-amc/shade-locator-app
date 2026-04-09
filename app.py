@@ -165,6 +165,24 @@ if results:
     if st.button("Book Smart") and selected:
         name, booked, capacity = selected[1], selected[2], selected[3]
 
+     import folium
+from streamlit_folium import st_folium
+
+st.subheader("🗺️ Live Shade Map")
+
+m = folium.Map(location=[12.97, 77.59], zoom_start=11)
+
+for name, capacity, lat, lon, booked in results:
+    color = "green" if booked < capacity else "red"
+
+    folium.Marker(
+        [lat, lon],
+        popup=f"{name}\n{booked}/{capacity}",
+        icon=folium.Icon(color=color)
+    ).add_to(m)
+
+st_folium(m, width=700)      
+
         if booked >= capacity:
             st.error("❌ Location is FULL")
         else:
