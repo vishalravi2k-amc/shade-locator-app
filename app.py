@@ -145,7 +145,7 @@ if results:
     # Format results
     location_options = []
 
-    for name, capacity, booked in results:
+    for name, capacity, lat, lon, booked in results::
         status = "🟢 Available" if booked < capacity else "🔴 Full"
         display = f"{name} ({booked}/{capacity}) {status}"
         location_options.append((display, name, booked, capacity))
