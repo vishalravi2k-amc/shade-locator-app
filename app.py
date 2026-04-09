@@ -99,7 +99,7 @@ elif choice == "Book Shade":
         "Filter by Region",
         ["All", "North", "South", "East", "West"]
     )
-
+    date = st.date_input("Select Date")
     time = st.time_input("Select Time")
 
     if not time:
@@ -128,7 +128,10 @@ elif choice == "Book Shade":
     """
 
     results = cursor.execute(query, params).fetchall()
-
+if results:
+    best = min(results, key=lambda x: x[2]/x[1] if x[1] else 1)
+    st.success(f"⭐ Recommended: {best[0]} (Least crowded)")
+    
     # Format results
     location_options = []
 
@@ -156,9 +159,9 @@ elif choice == "Book Shade":
             st.error("❌ Location is FULL")
         else:
             cursor.execute(
-                "INSERT INTO Bookings (user, location, time) VALUES (?, ?, ?)",
-                (user, name, time)
-            )
+    "INSERT INTO Bookings (user, location, time) VALUES (?, ?, ?)",
+    (user, name, f"{date} {time}")
+)
             conn.commit()
             st.success("✅ Booking Successful")
 
