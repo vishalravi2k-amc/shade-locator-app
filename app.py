@@ -57,10 +57,13 @@ def insert_bulk_data():
         capacity = random.randint(5, 100)
         region = random.choice(regions)
 
-        cursor.execute(
-            "INSERT INTO Locations (name, type, capacity, region) VALUES (?, ?, ?, ?)",
-            (name, type_, capacity, region)
-        )
+        lat = random.uniform(12.85, 13.10)
+lon = random.uniform(77.50, 77.70)
+
+cursor.execute(
+    "INSERT INTO Locations (name, type, capacity, region, lat, lon) VALUES (?, ?, ?, ?, ?, ?)",
+    (name, type_, capacity, region, lat, lon)
+)
 
     conn.commit()
 
@@ -115,7 +118,7 @@ elif choice == "Book Shade":
 
     # Query with capacity + time filtering
     query = """
-    SELECT L.name, L.capacity,
+    SELECT L.name, L.capacity, L.lat, L.lon,
     COUNT(CASE WHEN B.time=? THEN 1 END) as booked
     FROM Locations L
     LEFT JOIN Bookings B ON L.name = B.location
