@@ -139,7 +139,7 @@ elif choice == "Book Shade":
 
     results = cursor.execute(query, params).fetchall()
 if results:
-    best = min(results, key=lambda x: x[2]/x[1] if x[1] else 1)
+    best = min(results, key=lambda x: x[4]/x[1] if x[1] else 1)
     st.success(f"⭐ Recommended: {best[0]} (Least crowded)")
     
     # Format results
