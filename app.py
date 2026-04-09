@@ -121,7 +121,7 @@ LEFT JOIN Bookings B ON L.name = B.location
 WHERE L.name LIKE ?
 """
 
-    params = [datetime_str, f"%{search}%"]
+    params = [str(datetime_str), f"%{search}%"]
 
     if region_filter != "All":
         query += " AND L.region=?"
