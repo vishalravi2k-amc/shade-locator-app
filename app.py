@@ -8,6 +8,9 @@ import pandas as pd
 conn = sqlite3.connect('shade.db', check_same_thread=False)
 cursor = conn.cursor()
 
+
+cursor.execute("DROP TABLE IF EXISTS Locations")
+conn.commit()
 # Create tables
 cursor.execute('''CREATE TABLE IF NOT EXISTS Locations (
     id INTEGER PRIMARY KEY,
