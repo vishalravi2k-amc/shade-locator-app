@@ -8,7 +8,7 @@ import pandas as pd
 conn = sqlite3.connect('shade.db', check_same_thread=False)
 cursor = conn.cursor()
 
-# Create tables
+# Tables
 cursor.execute('''CREATE TABLE IF NOT EXISTS Locations (
     id INTEGER PRIMARY KEY,
     name TEXT,
@@ -26,7 +26,6 @@ cursor.execute('''CREATE TABLE IF NOT EXISTS Bookings (
     time TEXT
 )''')
 
-# NEW: Reports table
 cursor.execute('''CREATE TABLE IF NOT EXISTS Reports (
     id INTEGER PRIMARY KEY,
     location TEXT,
@@ -37,7 +36,6 @@ cursor.execute('''CREATE TABLE IF NOT EXISTS Reports (
 
 conn.commit()
 
-# ---------------- UI ----------------
 st.title("🌳 Shade Locator System")
 
 menu = ["Add Location", "Book Shade", "Report Issue", "View Bookings"]
@@ -48,13 +46,12 @@ if choice == "Add Location":
     st.subheader("Add Location")
 
     name = st.text_input("Location Name")
-    type_ = st.selectbox("Shade Type", ["Tree", "Building", "Bus Stop", "Shelter", "Umbrella"])
+    type_ = st.selectbox("Shade Type", ["Tree","Building","Bus Stop","Shelter","Umbrella"])
     capacity = st.number_input("Capacity", min_value=1)
-    region = st.selectbox("Region", ["North", "South", "East", "West"])
+    region = st.selectbox("Region", ["North","South","East","West"])
 
-    # MAP CLICK
-    st.write("📍 Click on map to select location")
-    m = folium.Map(location=[12.97, 77.59], zoom_start=11)
+    st.write("📍 Click map to select location")
+    m = folium.Map(location=[12.97,77.59], zoom_start=11)
     map_data = st_folium(m, height=400)
 
     lat, lon = 12.97, 77.59
@@ -65,35 +62,31 @@ if choice == "Add Location":
 
     if st.button("Add"):
         cursor.execute(
-            "INSERT INTO Locations (name, type, capacity, region, lat, lon) VALUES (?, ?, ?, ?, ?, ?)",
-            (name, type_, capacity, region, lat, lon)
+            "INSERT INTO Locations (name,type,capacity,region,lat,lon) VALUES (?,?,?,?,?,?)",
+            (name,type_,capacity,region,lat,lon)
         )
         conn.commit()
         st.success("Location Added")
 
 # ---------------- BOOK SHADE ----------------
 elif choice == "Book Shade":
-    st.subheader("🔍 Smart Shade Booking")
+    st.subheader("🗺️ Select Shade from Map")
 
     user = st.text_input("User Name")
-    search = st.text_input("Search Location")
+    search = st.text_input("Search")
 
-    region_filter = st.selectbox(
-        "Filter by Region",
-        ["All", "North", "South", "East", "West"]
-    )
+    region_filter = st.selectbox("Region", ["All","North","South","East","West"])
 
-    date = st.date_input("Select Date")
-    time_input = st.time_input("Select Time")
+    date = st.date_input("Date")
+    time_input = st.time_input("Time")
 
-    # SAFE conversion
     datetime_str = f"{date.strftime('%Y-%m-%d')} {time_input.strftime('%H:%M:%S')}"
 
     query = """
     SELECT L.name, L.capacity, L.lat, L.lon,
-    COUNT(CASE WHEN B.time = ? THEN 1 END) as booked
+    COUNT(CASE WHEN B.time=? THEN 1 END)
     FROM Locations L
-    LEFT JOIN Bookings B ON L.name = B.location
+    LEFT JOIN Bookings B ON L.name=B.location
     WHERE L.name LIKE ?
     """
 
@@ -103,46 +96,57 @@ elif choice == "Book Shade":
         query += " AND L.region=?"
         params.append(region_filter)
 
-    query += " GROUP BY L.name LIMIT 20"
+    query += " GROUP BY L.name LIMIT 50"
 
     results = cursor.execute(query, params).fetchall()
 
-    if results:
-        best = min(results, key=lambda x: x[4]/x[1] if x[1] else 1)
-        st.success(f"⭐ Recommended: {best[0]}")
+    st.write("👉 Click a marker to select")
 
-    options = [(f"{n} ({b}/{c})", n, b, c) for n,c,_,_,b in results]
+    m = folium.Map(location=[12.97,77.59], zoom_start=11)
 
-    selected = st.selectbox("Select Location", options, format_func=lambda x: x[0]) if options else None
+    for name,capacity,lat,lon,booked in results:
+        color = "green" if booked < capacity else "red"
+        folium.Marker(
+            [lat,lon],
+            popup=f"{name}|{booked}|{capacity}",
+            icon=folium.Icon(color=color)
+        ).add_to(m)
 
-    if st.button("Book") and selected:
-        name, booked, capacity = selected[1], selected[2], selected[3]
-        if booked >= capacity:
-            st.error("Full")
+    map_data = st_folium(m, height=500)
+
+    selected_name = None
+    selected_booked = 0
+    selected_capacity = 0
+
+    if map_data and map_data.get("last_object_clicked"):
+        popup = map_data["last_object_clicked"]["popup"]
+
+        if popup:
+            parts = popup.split("|")
+            selected_name = parts[0]
+            selected_booked = int(parts[1])
+            selected_capacity = int(parts[2])
+
+            st.success(f"📍 Selected: {selected_name}")
+
+    if st.button("Book Selected Location") and selected_name:
+        if selected_booked >= selected_capacity:
+            st.error("❌ Full")
         else:
             cursor.execute(
-                "INSERT INTO Bookings (user, location, time) VALUES (?, ?, ?)",
-                (user, name, datetime_str)
+                "INSERT INTO Bookings (user,location,time) VALUES (?,?,?)",
+                (user,selected_name,datetime_str)
             )
             conn.commit()
-            st.success("Booked!")
-
-    # MAP
-    m = folium.Map(location=[12.97, 77.59], zoom_start=11)
-
-    for name, capacity, lat, lon, booked in results:
-        color = "green" if booked < capacity else "red"
-        folium.Marker([lat, lon], popup=name, icon=folium.Icon(color=color)).add_to(m)
-
-    st_folium(m, height=400)
+            st.success("✅ Booked")
 
 # ---------------- REPORT ISSUE ----------------
 elif choice == "Report Issue":
-    st.subheader("⚠️ Report Shade Unavailable")
+    st.subheader("⚠️ Report Shade Issue")
 
-    st.write("Click location on map")
+    st.write("Click map to report")
 
-    m = folium.Map(location=[12.97, 77.59], zoom_start=11)
+    m = folium.Map(location=[12.97,77.59], zoom_start=11)
     map_data = st_folium(m, height=400)
 
     lat, lon = None, None
@@ -151,21 +155,22 @@ elif choice == "Report Issue":
         lon = map_data["last_clicked"]["lng"]
         st.success(f"Selected: {lat}, {lon}")
 
-    issue = st.selectbox("Issue", ["No Shade", "Wrong Location", "Closed"])
+    issue = st.selectbox("Issue", ["No Shade","Wrong Location","Closed"])
 
-    if st.button("Report") and lat:
+    if st.button("Submit Report") and lat:
         cursor.execute(
-            "INSERT INTO Reports (location, lat, lon, issue) VALUES (?, ?, ?, ?)",
-            ("User Report", lat, lon, issue)
+            "INSERT INTO Reports (location,lat,lon,issue) VALUES (?,?,?,?)",
+            ("User Report",lat,lon,issue)
         )
         conn.commit()
-        st.success("Reported successfully")
+        st.success("Reported")
 
 # ---------------- VIEW BOOKINGS ----------------
 elif choice == "View Bookings":
-    st.subheader("📊 All Bookings")
+    st.subheader("Bookings")
 
     data = cursor.execute("SELECT * FROM Bookings").fetchall()
+
     if data:
         df = pd.DataFrame(data, columns=["ID","User","Location","Time"])
         st.table(df)
