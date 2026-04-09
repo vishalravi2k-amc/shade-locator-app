@@ -46,36 +46,44 @@ choice = st.sidebar.selectbox("Menu", menu)
 if choice == "Add Location":
     st.subheader("Add Location")
 
-    name = st.text_input("Location Name")
-    type_ = st.selectbox("Shade Type", ["Tree","Building","Bus Stop","Shelter","Umbrella"])
-    capacity = st.number_input("Capacity", min_value=1)
-    region = st.selectbox("Region", ["North","South","East","West"])
+    col1, col2 = st.columns([1, 2])
 
-    st.markdown("### 📍 Click on map to select location")
+    with col1:
+        name = st.text_input("Location Name")
+        type_ = st.selectbox("Shade Type", ["Tree","Building","Bus Stop","Shelter","Umbrella"])
+        capacity = st.number_input("Capacity", min_value=1)
+        region = st.selectbox("Region", ["North","South","East","West"])
 
-    m = folium.Map(location=[12.97, 77.59], zoom_start=12)
+        if st.button("Add Location"):
+            cursor.execute(
+                "INSERT INTO Locations (name,type,capacity,region,lat,lon) VALUES (?,?,?,?,?,?)",
+                (name,type_,capacity,region,
+                 st.session_state.get("lat", 12.97),
+                 st.session_state.get("lon", 77.59))
+            )
+            conn.commit()
+            st.success("✅ Location Added")
 
-    map_data = st_folium(
-        m,
-        height=500,
-        width=700,
-        key="add_map"
-    )
+    with col2:
+        st.markdown("### 📍 Click on Map")
 
-    lat, lon = 12.97, 77.59
+        m = folium.Map(location=[12.97, 77.59], zoom_start=12)
 
-    if map_data and map_data.get("last_clicked"):
-        lat = map_data["last_clicked"]["lat"]
-        lon = map_data["last_clicked"]["lng"]
-        st.success(f"📍 Selected: {lat}, {lon}")
-
-    if st.button("Add Location"):
-        cursor.execute(
-            "INSERT INTO Locations (name,type,capacity,region,lat,lon) VALUES (?,?,?,?,?,?)",
-            (name,type_,capacity,region,lat,lon)
+        map_data = st_folium(
+            m,
+            height=500,
+            use_container_width=True,
+            key="add_map"
         )
-        conn.commit()
-        st.success("✅ Location Added")
+
+        if map_data and map_data.get("last_clicked"):
+            lat = map_data["last_clicked"]["lat"]
+            lon = map_data["last_clicked"]["lng"]
+
+            st.session_state["lat"] = lat
+            st.session_state["lon"] = lon
+
+            st.success(f"📍 Selected: {lat}, {lon}")
 
 # ---------------- BOOK SHADE ----------------
 elif choice == "Book Shade":
@@ -109,7 +117,7 @@ elif choice == "Book Shade":
 
     results = cursor.execute(query, params).fetchall()
 
-    st.markdown("### 👉 Click a marker to select location")
+    st.markdown("### 👉 Click marker to select")
 
     m = folium.Map(location=[12.97,77.59], zoom_start=12)
 
@@ -124,7 +132,7 @@ elif choice == "Book Shade":
     map_data = st_folium(
         m,
         height=500,
-        width=900,
+        use_container_width=True,
         key="book_map"
     )
 
@@ -158,14 +166,12 @@ elif choice == "Book Shade":
 elif choice == "Report Issue":
     st.subheader("⚠️ Report Shade Issue")
 
-    st.markdown("### 📍 Click map to report issue")
-
     m = folium.Map(location=[12.97,77.59], zoom_start=12)
 
     map_data = st_folium(
         m,
         height=500,
-        width=700,
+        use_container_width=True,
         key="report_map"
     )
 
@@ -188,7 +194,7 @@ elif choice == "Report Issue":
 
 # ---------------- VIEW BOOKINGS ----------------
 elif choice == "View Bookings":
-    st.subheader("📊 All Bookings")
+    st.subheader("📊 Bookings")
 
     data = cursor.execute("SELECT * FROM Bookings").fetchall()
 
