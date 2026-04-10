@@ -1,80 +1,128 @@
 import streamlit as st
+import sqlite3
+import hashlib
 import folium
 from streamlit_folium import st_folium
 from folium.plugins import HeatMap
 
-# ---------------- PAGE CONFIG ----------------
-st.set_page_config(page_title="Shade Locator ULTRA", layout="wide")
+# -------------------- DATABASE SETUP --------------------
+conn = sqlite3.connect("users.db", check_same_thread=False)
+c = conn.cursor()
 
-# ---------------- SESSION STATE ----------------
+c.execute("""
+CREATE TABLE IF NOT EXISTS users (
+    username TEXT,
+    password TEXT
+)
+""")
+conn.commit()
+
+# -------------------- PASSWORD HASH --------------------
+def hash_password(password):
+    return hashlib.sha256(password.encode()).hexdigest()
+
+# -------------------- USER FUNCTIONS --------------------
+def add_user(username, password):
+    c.execute("INSERT INTO users VALUES (?, ?)", (username, hash_password(password)))
+    conn.commit()
+
+def login_user(username, password):
+    c.execute("SELECT * FROM users WHERE username=? AND password=?", 
+              (username, hash_password(password)))
+    return c.fetchone()
+
+# -------------------- SESSION --------------------
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 
-# ---------------- USER DATABASE ----------------
-users = {
-    "vishal": "1234",
-    "admin": "admin"
+# -------------------- UI DESIGN --------------------
+st.set_page_config(page_title="Shade Locator ULTRA", layout="wide")
+
+st.markdown("""
+<style>
+.big-title {
+    font-size:40px;
+    font-weight:bold;
+    text-align:center;
 }
+</style>
+""", unsafe_allow_html=True)
 
-# ---------------- LOGIN FUNCTION ----------------
-def login():
-    st.markdown("<h1 style='text-align: center;'>🌳 Shade Locator ULTRA</h1>", unsafe_allow_html=True)
-    st.markdown("<h3 style='text-align: center;'>🔐 Login</h3>", unsafe_allow_html=True)
+# -------------------- LOGIN SYSTEM --------------------
+if not st.session_state.logged_in:
 
-    username = st.text_input("Username")
-    password = st.text_input("Password", type="password")
+    st.markdown('<div class="big-title">🌳 Shade Locator ULTRA</div>', unsafe_allow_html=True)
 
-    if st.button("Login", use_container_width=True):
-        if username in users and users[username] == password:
-            st.session_state.logged_in = True
-            st.success("Login successful ✅")
-            st.rerun()
-        else:
-            st.error("Invalid credentials ❌")
+    menu = ["Login", "Signup"]
+    choice = st.radio("Select Option", menu)
 
-# ---------------- MAIN APP ----------------
-def main_app():
-    st.markdown("<h1 style='text-align: center;'>🌳 Shade Locator ULTRA</h1>", unsafe_allow_html=True)
-    st.success("Welcome! You are logged in 🎉")
+    if choice == "Signup":
+        st.subheader("Create Account")
+
+        new_user = st.text_input("Username")
+        new_pass = st.text_input("Password", type='password')
+
+        if st.button("Signup"):
+            add_user(new_user, new_pass)
+            st.success("Account created! Now login.")
+
+    elif choice == "Login":
+        st.subheader("Login")
+
+        username = st.text_input("Username")
+        password = st.text_input("Password", type='password')
+
+        if st.button("Login"):
+            result = login_user(username, password)
+
+            if result:
+                st.session_state.logged_in = True
+                st.success(f"Welcome {username} 🎉")
+                st.rerun()
+            else:
+                st.error("Invalid credentials")
+
+# -------------------- MAIN APP --------------------
+else:
+    st.markdown('<div class="big-title">🌳 Shade Locator ULTRA</div>', unsafe_allow_html=True)
+
+    if st.button("Logout"):
+        st.session_state.logged_in = False
+        st.rerun()
 
     st.subheader("🗺️ Live Shade Map")
 
-    # Sample shade locations (you can replace with real DB later)
-    locations = [
-        ("Park Area", 12.9716, 77.5946, 50),
-        ("Bus Stop Shade", 12.9750, 77.5990, 30),
-        ("Tree Cluster", 12.9680, 77.5900, 80),
-        ("Mall Entrance", 12.9730, 77.6020, 60)
-    ]
+    # Default location (Bangalore)
+    center_lat = 12.9716
+    center_lon = 77.5946
 
-    # Create map
-    m = folium.Map(location=[12.9716, 77.5946], zoom_start=13)
+    m = folium.Map(location=[center_lat, center_lon], zoom_start=12)
+
+    # Dummy Shade Locations
+    locations = [
+        ("Park Area", 12.9716, 77.5946, 80),
+        ("Bus Stop Shade", 12.9616, 77.5846, 60),
+        ("Mall Entrance", 12.9816, 77.6046, 90),
+        ("Tree Cluster", 12.9916, 77.6146, 70)
+    ]
 
     heat_data = []
 
     for name, lat, lon, intensity in locations:
         folium.Marker(
-            location=[lat, lon],
-            popup=f"{name} (Shade: {intensity}%)",
-            tooltip=name
+            [lat, lon],
+            popup=f"{name} | Shade: {intensity}%",
+            icon=folium.Icon(color="green")
         ).add_to(m)
 
-        heat_data.append([lat, lon, intensity])
+        heat_data.append([lat, lon, intensity / 100])
 
-    # Add heatmap
+    # Heatmap
     HeatMap(heat_data).add_to(m)
 
     # Display map
-    st_folium(m, width=900, height=500)
+    st_folium(m, width=1000, height=500)
 
-    # Logout
-    st.markdown("---")
-    if st.button("🚪 Logout", use_container_width=True):
-        st.session_state.logged_in = False
-        st.rerun()
+    st.success("✅ Live shade + heatmap loaded")
 
-# ---------------- APP FLOW ----------------
-if not st.session_state.logged_in:
-    login()
-else:
-    main_app()
+    st.info("🚀 Next upgrade: GPS tracking + real navigation")
