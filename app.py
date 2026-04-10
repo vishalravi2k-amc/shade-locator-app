@@ -20,6 +20,8 @@ CREATE TABLE IF NOT EXISTS bookings (
 """)
 conn.commit()
 
+TIME_SLOTS = ["6:00 AM", "8:00 AM", "10:00 AM", "12:00 PM", "2:00 PM", "4:00 PM", "6:00 PM"]
+
 def hash_password(p): return hashlib.sha256(p.encode()).hexdigest()
 
 def add_user(u, p):
@@ -37,6 +39,10 @@ def book_spot(username, name, lat, lon, shade_type, date, slot):
               (username, name, lat, lon, shade_type, date, slot, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
     conn.commit()
 
+def is_slot_taken(spot_name, date, slot):
+    c.execute("SELECT COUNT(*) FROM bookings WHERE spot_name=? AND date=? AND time_slot=?", (spot_name, date, slot))
+    return c.fetchone()[0] > 0
+
 def get_bookings(username):
     c.execute("SELECT spot_name, shade_type, lat, lon, date, time_slot, booked_at FROM bookings WHERE username=? ORDER BY booked_at DESC", (username,))
     return c.fetchall()
@@ -52,7 +58,6 @@ def haversine(lat1, lon1, lat2, lon2):
     a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1))*math.cos(math.radians(lat2))*math.sin(dlon/2)**2
     return R * 2 * math.asin(math.sqrt(a))
 
-# -------------------- OVERPASS: FETCH REAL SHADE FROM OSM --------------------
 def fetch_shade_spots(lat, lon, radius_m=1500):
     query = f"""
     [out:json][timeout:25];
@@ -66,21 +71,17 @@ def fetch_shade_spots(lat, lon, radius_m=1500):
       way["landuse"="grass"](around:{radius_m},{lat},{lon});
       way["leisure"="garden"](around:{radius_m},{lat},{lon});
       node["tourism"="picnic_site"](around:{radius_m},{lat},{lon});
-      way["highway"="pedestrian"]["trees"](around:{radius_m},{lat},{lon});
-      node["natural"="tree_row"](around:{radius_m},{lat},{lon});
       way["natural"="tree_row"](around:{radius_m},{lat},{lon});
     );
     out center tags;
     """
     try:
-        resp = requests.post("https://overpass-api.de/api/interpreter",
-                             data={"data": query}, timeout=30)
+        resp = requests.post("https://overpass-api.de/api/interpreter", data={"data": query}, timeout=30)
         data = resp.json()
         spots = []
         seen = set()
         for el in data.get("elements", []):
             tags = el.get("tags", {})
-            # Get lat/lon
             if el["type"] == "node":
                 elat, elon = el.get("lat"), el.get("lon")
             else:
@@ -89,7 +90,6 @@ def fetch_shade_spots(lat, lon, radius_m=1500):
             if not elat or not elon:
                 continue
 
-            # Determine shade type and icon
             natural = tags.get("natural", "")
             landuse = tags.get("landuse", "")
             leisure = tags.get("leisure", "")
@@ -97,99 +97,57 @@ def fetch_shade_spots(lat, lon, radius_m=1500):
             tourism = tags.get("tourism", "")
 
             if natural in ("tree", "tree_row"):
-                shade_type = "🌳 Tree / Tree Row"
-                color = "#2ecc40"
-                intensity = 85
+                shade_type, color, intensity = "🌳 Tree", "#2ecc40", 85
             elif natural == "wood" or landuse == "forest":
-                shade_type = "🌲 Forest / Wood"
-                color = "#27ae60"
-                intensity = 95
+                shade_type, color, intensity = "🌲 Forest", "#27ae60", 95
             elif leisure == "park":
-                shade_type = "🏞️ Park"
-                color = "#52c41a"
-                intensity = 75
+                shade_type, color, intensity = "🏞️ Park", "#52c41a", 75
             elif leisure == "garden":
-                shade_type = "🌺 Garden"
-                color = "#73d13d"
-                intensity = 70
+                shade_type, color, intensity = "🌺 Garden", "#73d13d", 70
             elif landuse == "grass":
-                shade_type = "🌿 Grass / Open Green"
-                color = "#95de64"
-                intensity = 50
+                shade_type, color, intensity = "🌿 Grass", "#95de64", 50
             elif amenity == "shelter":
-                shade_type = "🏠 Shelter / Canopy"
-                color = "#fa8c16"
-                intensity = 90
+                shade_type, color, intensity = "🏠 Shelter", "#fa8c16", 90
             elif tourism == "picnic_site":
-                shade_type = "🧺 Picnic Site"
-                color = "#13c2c2"
-                intensity = 65
+                shade_type, color, intensity = "🧺 Picnic Site", "#13c2c2", 65
             else:
-                shade_type = "🌿 Green Area"
-                color = "#52c41a"
-                intensity = 60
+                shade_type, color, intensity = "🌿 Green Area", "#52c41a", 60
 
-            name = (tags.get("name") or
-                    tags.get("description") or
-                    f"{shade_type} ({elat:.4f}, {elon:.4f})")
-
-            # Deduplicate by rounding coords
+            name = tags.get("name") or f"{shade_type} ({elat:.4f}, {elon:.4f})"
             key = (round(elat, 4), round(elon, 4))
             if key in seen:
                 continue
             seen.add(key)
 
-            dist = haversine(lat, lon, elat, elon)
             spots.append({
-                "name": name,
-                "lat": elat, "lon": elon,
-                "shade_type": shade_type,
-                "color": color,
-                "intensity": intensity,
-                "distance": dist,
-                "tags": tags
+                "name": name, "lat": elat, "lon": elon,
+                "shade_type": shade_type, "color": color,
+                "intensity": intensity, "distance": haversine(lat, lon, elat, elon)
             })
 
         spots.sort(key=lambda x: x["distance"])
-        return spots[:40]  # top 40 nearest
-
-    except Exception as e:
+        return spots[:40]
+    except:
         return []
 
-def get_google_maps_url(lat, lon):
+def gmaps_url(lat, lon):
     return f"https://www.google.com/maps/dir/?api=1&destination={lat},{lon}&travelmode=walking"
-
-def get_osm_url(lat, lon):
-    return f"https://www.openstreetmap.org/directions?engine=fossgis_osrm_foot&route=;{lat},{lon}"
 
 # -------------------- SESSION --------------------
 for k, v in {"logged_in": False, "username": "", "user_lat": None, "user_lon": None,
-             "shade_spots": [], "booking_spot": None, "loading": False}.items():
+             "shade_spots": [], "active_booking_key": None}.items():
     if k not in st.session_state:
         st.session_state[k] = v
 
-# -------------------- PAGE CONFIG --------------------
 st.set_page_config(page_title="Shade Locator ULTRA", layout="wide")
 st.markdown("""
 <style>
 .big-title { font-size:32px; font-weight:bold; text-align:center; margin-bottom:2px; }
-.tip-box {
-    background:#2a2a1e; border-left:4px solid #ffcc00;
-    border-radius:8px; padding:10px 16px; margin-bottom:10px; font-size:14px;
-}
-.spot-card {
-    background:#1e2a1e; border-left:4px solid #4caf50;
-    border-radius:8px; padding:10px 14px; margin:5px 0;
-}
-.booking-row {
-    background:#1a2433; border-left:4px solid #2196f3;
-    border-radius:6px; padding:10px 14px; margin-bottom:8px;
-}
-.nav-btn {
-    background:#1a3a5c; border-radius:6px; padding:6px 12px;
-    font-size:13px; color:white; text-decoration:none;
-    display:inline-block; margin-top:4px;
-}
+.tip-box { background:#2a2a1e; border-left:4px solid #ffcc00; border-radius:8px; padding:10px 16px; margin-bottom:10px; font-size:14px; }
+.spot-card { background:#1e2a1e; border-left:4px solid #4caf50; border-radius:8px; padding:10px 14px; margin:4px 0; }
+.booking-panel { background:#1a2433; border:2px solid #2196f3; border-radius:10px; padding:14px 16px; margin:6px 0 12px 0; }
+.booking-row { background:#1a2433; border-left:4px solid #2196f3; border-radius:6px; padding:10px 14px; margin-bottom:8px; }
+a.nav-btn { background:#1a3a5c; border-radius:6px; padding:5px 12px; font-size:13px; color:white !important; text-decoration:none; display:inline-block; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -198,7 +156,7 @@ if not st.session_state.logged_in:
     st.markdown('<div class="big-title">🌳 Shade Locator ULTRA</div>', unsafe_allow_html=True)
     st.markdown("<p style='text-align:center;color:gray;'>Tap anywhere in Bangalore — find real shade spots near you</p>", unsafe_allow_html=True)
     st.divider()
-    col1, col2, col3 = st.columns([1,1.5,1])
+    col1, col2, col3 = st.columns([1, 1.5, 1])
     with col2:
         choice = st.radio("", ["Login", "Sign Up"], horizontal=True)
         if choice == "Sign Up":
@@ -207,7 +165,7 @@ if not st.session_state.logged_in:
             np_ = st.text_input("Password", type="password")
             if st.button("Create Account", use_container_width=True):
                 if nu and np_:
-                    st.success("Created! Log in now.") if add_user(nu, np_) else st.error("Username taken.")
+                    st.success("Created! Log in.") if add_user(nu, np_) else st.error("Username taken.")
                 else:
                     st.warning("Fill both fields.")
         else:
@@ -225,13 +183,13 @@ if not st.session_state.logged_in:
 # -------------------- MAIN APP --------------------
 else:
     st.markdown('<div class="big-title">🌳 Shade Locator ULTRA</div>', unsafe_allow_html=True)
-    col_u, col_l = st.columns([5,1])
+    col_u, col_l = st.columns([5, 1])
     with col_u:
         st.markdown(f"<p style='color:#aaa;margin:0;'>👤 <b>{st.session_state.username}</b></p>", unsafe_allow_html=True)
     with col_l:
         if st.button("🚪 Logout"):
-            for k in ["logged_in","username","user_lat","user_lon","shade_spots","booking_spot"]:
-                st.session_state[k] = False if k=="logged_in" else "" if k=="username" else None if k in ["user_lat","user_lon","booking_spot"] else []
+            for k in ["logged_in","username","user_lat","user_lon","shade_spots","active_booking_key"]:
+                st.session_state[k] = False if k=="logged_in" else "" if k=="username" else None if k in ["user_lat","user_lon","active_booking_key"] else []
             st.rerun()
 
     st.divider()
@@ -240,35 +198,25 @@ else:
     with tab1:
         st.markdown("""
         <div class="tip-box">
-            🗺️ <b>Pinch to zoom</b> to any street in Bangalore, then <b>tap the map</b> to drop your pin.<br>
-            Real shade spots (trees, parks, shelters, forests) are fetched live from OpenStreetMap within <b>1.5 km</b>.
+            🗺️ <b>Pinch to zoom</b> anywhere in Bangalore, then <b>tap the map</b> to drop your pin.<br>
+            Real trees, parks, shelters & gardens fetched live within <b>1.5 km</b>.
         </div>
         """, unsafe_allow_html=True)
 
         center_lat = st.session_state.user_lat or 12.9716
         center_lon = st.session_state.user_lon or 77.5946
 
-        m = folium.Map(location=[center_lat, center_lon], zoom_start=13,
-                       tiles="CartoDB positron")
+        m = folium.Map(location=[center_lat, center_lon], zoom_start=14, tiles="CartoDB positron")
 
-        # Plot fetched shade spots
         for spot in st.session_state.shade_spots:
             folium.CircleMarker(
                 location=[spot["lat"], spot["lon"]],
-                radius=9,
-                color=spot["color"],
-                weight=2,
-                fill=True,
-                fill_color=spot["color"],
-                fill_opacity=0.85,
-                tooltip=folium.Tooltip(f"{spot['shade_type']}\n{spot['name']}\n📏 {spot['distance']:.2f} km"),
-                popup=folium.Popup(
-                    f"<b>{spot['name']}</b><br>{spot['shade_type']}<br>☀️ Shade: {spot['intensity']}%<br>📏 {spot['distance']:.2f} km",
-                    max_width=220
-                )
+                radius=9, color=spot["color"], weight=2,
+                fill=True, fill_color=spot["color"], fill_opacity=0.85,
+                tooltip=folium.Tooltip(f"{spot['shade_type']} — {spot['name']}\n📏 {spot['distance']:.2f} km"),
+                popup=folium.Popup(f"<b>{spot['name']}</b><br>{spot['shade_type']}<br>☀️ {spot['intensity']}% shade<br>📏 {spot['distance']:.2f} km", max_width=200)
             ).add_to(m)
 
-        # User pin
         if st.session_state.user_lat:
             folium.Marker(
                 [st.session_state.user_lat, st.session_state.user_lon],
@@ -280,102 +228,101 @@ else:
                 radius=1500, color="#2196f3", fill=True, fill_opacity=0.06
             ).add_to(m)
 
-        map_data = st_folium(m, width=None, height=430, key="main_map",
-                             returned_objects=["last_clicked"])
+        map_data = st_folium(m, width=None, height=400, key="main_map", returned_objects=["last_clicked"])
 
-        # On tap — fetch real OSM shade data
         if map_data and map_data.get("last_clicked"):
             clk = map_data["last_clicked"]
             new_lat, new_lon = clk["lat"], clk["lng"]
             if new_lat != st.session_state.user_lat or new_lon != st.session_state.user_lon:
                 st.session_state.user_lat = new_lat
                 st.session_state.user_lon = new_lon
-                st.session_state.booking_spot = None
-                with st.spinner("🔍 Fetching real shade spots from OpenStreetMap..."):
-                    st.session_state.shade_spots = fetch_shade_spots(new_lat, new_lon, radius_m=1500)
+                st.session_state.active_booking_key = None
+                with st.spinner("🔍 Fetching shade spots from OpenStreetMap..."):
+                    st.session_state.shade_spots = fetch_shade_spots(new_lat, new_lon)
                 st.rerun()
 
-        # Results
         if st.session_state.user_lat:
             st.markdown(f"📍 **Your pin:** `{st.session_state.user_lat:.5f}, {st.session_state.user_lon:.5f}`")
-
             spots = st.session_state.shade_spots
-            if spots:
-                st.markdown(f"### 🌿 {len(spots)} Shade Spot(s) Found — Nearest First")
 
-                # Legend
-                st.markdown("🌳 Tree &nbsp;|&nbsp; 🌲 Forest &nbsp;|&nbsp; 🏞️ Park &nbsp;|&nbsp; 🌺 Garden &nbsp;|&nbsp; 🏠 Shelter &nbsp;|&nbsp; 🧺 Picnic Site &nbsp;|&nbsp; 🌿 Green Area")
+            if spots:
+                st.markdown(f"### 🌿 {len(spots)} Shade Spot(s) — Nearest First")
+                st.caption("🌳 Tree | 🌲 Forest | 🏞️ Park | 🌺 Garden | 🏠 Shelter | 🧺 Picnic | 🌿 Green")
                 st.divider()
 
-                for spot in spots:
-                    shade_pct = spot["intensity"]
-                    badge = f"🟢 {shade_pct}%" if shade_pct >= 75 else f"🟠 {shade_pct}%" if shade_pct >= 50 else f"🔴 {shade_pct}%"
-                    gmaps_url = get_google_maps_url(spot["lat"], spot["lon"])
+                for i, spot in enumerate(spots):
+                    badge = f"🟢 {spot['intensity']}%" if spot['intensity'] >= 75 else f"🟠 {spot['intensity']}%" if spot['intensity'] >= 50 else f"🔴 {spot['intensity']}%"
+                    spot_key = f"{i}_{spot['lat']}_{spot['lon']}"
 
-                    col_card, col_nav, col_book = st.columns([4, 1, 1])
-                    with col_card:
-                        st.markdown(f"""
-                        <div class="spot-card">
-                            {spot['shade_type']} &nbsp;<b>{spot['name']}</b><br>
-                            ☀️ Shade: {badge} &nbsp;|&nbsp; 📏 <b>{spot['distance']:.2f} km away</b>
-                        </div>
-                        """, unsafe_allow_html=True)
+                    # Card + inline buttons
+                    st.markdown(f"""
+                    <div class="spot-card">
+                        {spot['shade_type']} &nbsp;<b>{spot['name']}</b><br>
+                        ☀️ Shade: {badge} &nbsp;|&nbsp; 📏 <b>{spot['distance']:.2f} km away</b>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                    col_nav, col_book, col_spacer = st.columns([1, 1, 4])
                     with col_nav:
-                        st.write("")
-                        st.markdown(
-                            f'<a href="{gmaps_url}" target="_blank" class="nav-btn">🗺️ Navigate</a>',
-                            unsafe_allow_html=True
-                        )
+                        st.markdown(f'<a href="{gmaps_url(spot["lat"], spot["lon"])}" target="_blank" class="nav-btn">🗺️ Navigate</a>', unsafe_allow_html=True)
                     with col_book:
-                        st.write("")
-                        if st.button("📋 Book", key=f"book_{spot['lat']}_{spot['lon']}"):
-                            st.session_state.booking_spot = spot
+                        if st.button("📋 Book Spot", key=f"book_{spot_key}"):
+                            # Toggle: clicking same spot closes it
+                            if st.session_state.active_booking_key == spot_key:
+                                st.session_state.active_booking_key = None
+                            else:
+                                st.session_state.active_booking_key = spot_key
                             st.rerun()
+
+                    # ---- Inline booking panel opens RIGHT below this card ----
+                    if st.session_state.active_booking_key == spot_key:
+                        with st.container():
+                            st.markdown(f"""
+                            <div class="booking-panel">
+                                <b>📋 Booking: {spot['name']}</b><br>
+                                {spot['shade_type']} &nbsp;|&nbsp; ☀️ {spot['intensity']}% shade &nbsp;|&nbsp; 📏 {spot['distance']:.2f} km
+                            </div>
+                            """, unsafe_allow_html=True)
+
+                            col_d, col_t = st.columns(2)
+                            with col_d:
+                                sel_date = st.date_input("📅 Date", min_value=datetime.today().date(), key=f"date_{spot_key}")
+                            with col_t:
+                                avail_slots = [s for s in TIME_SLOTS if not is_slot_taken(spot["name"], str(sel_date), s)]
+                                taken_slots = [s for s in TIME_SLOTS if s not in avail_slots]
+
+                            if avail_slots:
+                                sel_slot = st.radio("⏰ Pick a time slot", avail_slots, horizontal=True, key=f"slot_{spot_key}")
+                                if taken_slots:
+                                    st.caption(f"Already booked: {', '.join(taken_slots)}")
+
+                                col_confirm, col_close = st.columns(2)
+                                with col_confirm:
+                                    if st.button("✅ Confirm Booking", key=f"confirm_{spot_key}", use_container_width=True, type="primary"):
+                                        if is_slot_taken(spot["name"], str(sel_date), sel_slot):
+                                            st.error("Slot just taken! Pick another.")
+                                        else:
+                                            book_spot(st.session_state.username, spot["name"],
+                                                      spot["lat"], spot["lon"], spot["shade_type"],
+                                                      str(sel_date), sel_slot)
+                                            st.success(f"🎉 Booked **{spot['name']}** at **{sel_slot}** on **{sel_date}**!")
+                                            st.session_state.active_booking_key = None
+                                            st.balloons()
+                                            st.rerun()
+                                with col_close:
+                                    if st.button("✖ Cancel", key=f"close_{spot_key}", use_container_width=True):
+                                        st.session_state.active_booking_key = None
+                                        st.rerun()
+                            else:
+                                st.warning("All slots taken for this date. Try another date.")
+                                if st.button("✖ Close", key=f"close2_{spot_key}"):
+                                    st.session_state.active_booking_key = None
+                                    st.rerun()
+
             else:
-                st.warning("😔 No shade features found within 1.5 km of your tap. Try tapping near a park, road with trees, or residential area.")
-
+                st.warning("😔 No shade features found within 1.5 km. Try tapping near a park or residential area.")
         else:
-            st.info("👆 Tap anywhere on the map above to find real shade spots near that location.")
-
-        # ---- Booking panel ----
-        if st.session_state.booking_spot:
-            spot = st.session_state.booking_spot
-            st.divider()
-            st.markdown(f"### 📋 Booking: **{spot['name']}**")
-            st.markdown(f"{spot['shade_type']} &nbsp;|&nbsp; ☀️ {spot['intensity']}% shade &nbsp;|&nbsp; 📏 {spot['distance']:.2f} km from you")
-
-            gmaps = get_google_maps_url(spot["lat"], spot["lon"])
-            st.markdown(f'<a href="{gmaps}" target="_blank" class="nav-btn">🗺️ Open Navigation in Google Maps</a>', unsafe_allow_html=True)
-            st.write("")
-
-            col_a, col_b = st.columns(2)
-            with col_a:
-                sel_date = st.date_input("📅 Date", min_value=datetime.today().date(), key="book_date")
-            with col_b:
-                avail = [s for s in ["6:00 AM","8:00 AM","10:00 AM","12:00 PM","2:00 PM","4:00 PM","6:00 PM"]
-                         if not (lambda sn,d,sl: (c.execute("SELECT COUNT(*) FROM bookings WHERE spot_name=? AND date=? AND time_slot=?",(sn,d,sl)), c.fetchone()[0]>0)[1])(spot["name"], str(sel_date), s)]
-                taken  = [s for s in ["6:00 AM","8:00 AM","10:00 AM","12:00 PM","2:00 PM","4:00 PM","6:00 PM"] if s not in avail]
-                if avail:
-                    sel_slot = st.radio("⏰ Time Slot", avail, horizontal=True, key="book_slot")
-                else:
-                    st.warning("All slots taken for this date.")
-                    sel_slot = None
-                if taken:
-                    st.caption(f"Taken: {', '.join(taken)}")
-
-            col_c, col_d = st.columns(2)
-            with col_c:
-                if sel_slot and st.button("✅ Confirm Booking", use_container_width=True, type="primary"):
-                    book_spot(st.session_state.username, spot["name"], spot["lat"], spot["lon"],
-                              spot["shade_type"], str(sel_date), sel_slot)
-                    st.success(f"🎉 Booked **{spot['name']}** on **{sel_date}** at **{sel_slot}**!")
-                    st.session_state.booking_spot = None
-                    st.balloons()
-                    st.rerun()
-            with col_d:
-                if st.button("✖ Close", use_container_width=True):
-                    st.session_state.booking_spot = None
-                    st.rerun()
+            st.info("👆 Tap anywhere on the map to find real shade spots near that location.")
 
     # ==================== TAB 2 ====================
     with tab2:
@@ -388,7 +335,6 @@ else:
             st.divider()
             for b in bookings:
                 spot_name, shade_type, lat, lon, date, time_slot, booked_at = b
-                gmaps = get_google_maps_url(lat, lon)
                 col_info, col_nav, col_cancel = st.columns([4, 1, 1])
                 with col_info:
                     st.markdown(f"""
@@ -401,7 +347,7 @@ else:
                 with col_nav:
                     st.write("")
                     st.write("")
-                    st.markdown(f'<a href="{gmaps}" target="_blank" class="nav-btn">🗺️ Go</a>', unsafe_allow_html=True)
+                    st.markdown(f'<a href="{gmaps_url(lat, lon)}" target="_blank" class="nav-btn">🗺️ Go</a>', unsafe_allow_html=True)
                 with col_cancel:
                     st.write("")
                     st.write("")
@@ -411,4 +357,4 @@ else:
                         st.rerun()
 
     st.divider()
-    st.info("🚀 Next upgrade: GPS auto-detect + shade intensity from satellite imagery")
+    st.info("🚀 Next: GPS auto-detect + real-time shade from satellite imagery")
